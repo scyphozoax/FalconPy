@@ -174,4 +174,4 @@ python test_app.py
 
 ## 📄 许可证
 
-本项目采用LGPL v3协议。
+本项目采用LGPL v2.1协议。
