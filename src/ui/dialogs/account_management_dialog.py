@@ -55,24 +55,35 @@ class AccountManagementDialog(QDialog):
         self._refresh_rows()
 
     def _init_ui(self):
-        self.setWindowTitle(self.i18n.t("账号管理"))
-        self.setFixedSize(560, 380)
+        from PyQt6.QtWidgets import QApplication
+        self.setWindowTitle("")
+        try:
+            parent_w = self.parent().width() if self.parent() else None
+        except Exception:
+            parent_w = None
+        screen_w = QApplication.primaryScreen().availableGeometry().width()
+        max_w = int((parent_w or int(screen_w * 0.6)) * 1.0)
+        self.setMinimumWidth(480)
+        try:
+            self.setMaximumWidth(max_w)
+        except Exception:
+            pass
+        self.resize(min(max_w, 520), 360)
         self.setModal(True)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setSpacing(10)
 
-        title = QLabel(self.i18n.t("账号管理"))
-        title.setFont(QFont("", 16, QFont.Weight.Bold))
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title)
+        
 
         desc = QLabel(self.i18n.t("在此管理各网站的登录状态与凭据"))
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(desc)
 
         grid = QGridLayout()
-        grid.setVerticalSpacing(10)
-        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(12)
+        grid.setHorizontalSpacing(10)
         layout.addLayout(grid)
         self.grid = grid
 

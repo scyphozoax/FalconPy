@@ -27,12 +27,13 @@ class Config:
             "window": {
                 "width": 1200,
                 "height": 800,
-                "maximized": False
+                "maximized": True
             },
             "appearance": {
                 "theme": "dark",
                 "font": "等距更纱黑体,11",
                 "scale": 100,
+                "scale_base": 70,
                 "show_thumbnails": True,
                 "show_image_info": True,
                 "animate_transitions": True,
@@ -100,8 +101,12 @@ class Config:
             "updates": {
                 "enabled": True,
                 "interval_minutes": 60,
-                "feed_url": "https://example.com/falconpy/latest.json",
-                "channel": "stable"
+                "feed_url": "",
+                "channel": "stable",
+                "ignore_versions": [],
+                "last_notified": None,
+                "source": "github",
+                "github_repo": ""
             }
         }
         

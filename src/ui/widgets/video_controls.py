@@ -5,8 +5,8 @@
 """
 
 from PyQt6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QPushButton, 
-                             QSlider, QLabel, QFrame, QSizePolicy)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, pyqtSlot
+                             QSlider, QLabel, QFrame, QSizePolicy, QStyle)
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, pyqtSlot, QSize
 from PyQt6.QtGui import QIcon, QFont
 from PyQt6.QtMultimedia import QMediaPlayer
 from ...core.i18n import I18n
@@ -58,7 +58,8 @@ class VideoControls(QWidget):
 
     def setup_ui(self):
         """设置UI"""
-        self.setFixedHeight(80)
+        from PyQt6.QtWidgets import QSizePolicy
+        self.setMinimumHeight(80)
         self.setStyleSheet("""
             QWidget {
                 background-color: rgba(0, 0, 0, 180);
@@ -129,32 +130,37 @@ class VideoControls(QWidget):
         controls_layout = QHBoxLayout()
         
         # 播放控制
-        self.play_pause_btn = QPushButton("▶")
-        self.play_pause_btn.setFixedSize(40, 30)
+        self.play_pause_btn = QPushButton("")
+        self.play_pause_btn.setMinimumSize(28, 24)
+        self.play_pause_btn.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
         self.play_pause_btn.setToolTip(self.i18n.t("播放/暂停 (空格)"))
         controls_layout.addWidget(self.play_pause_btn)
         
-        self.stop_btn = QPushButton("⏹")
-        self.stop_btn.setFixedSize(30, 30)
+        self.stop_btn = QPushButton("")
+        self.stop_btn.setMinimumSize(28, 24)
+        self.stop_btn.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
         self.stop_btn.setToolTip(self.i18n.t("停止"))
         controls_layout.addWidget(self.stop_btn)
         
         # 快进/快退
-        self.rewind_btn = QPushButton("⏪")
-        self.rewind_btn.setFixedSize(30, 30)
+        self.rewind_btn = QPushButton("")
+        self.rewind_btn.setMinimumSize(28, 24)
+        self.rewind_btn.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
         self.rewind_btn.setToolTip(self.i18n.t("快退10秒 (←)"))
         controls_layout.addWidget(self.rewind_btn)
         
-        self.forward_btn = QPushButton("⏩")
-        self.forward_btn.setFixedSize(30, 30)
+        self.forward_btn = QPushButton("")
+        self.forward_btn.setMinimumSize(28, 24)
+        self.forward_btn.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
         self.forward_btn.setToolTip(self.i18n.t("快进10秒 (→)"))
         controls_layout.addWidget(self.forward_btn)
         
         controls_layout.addStretch()
         
         # 音量控制
-        self.mute_btn = QPushButton("🔊")
-        self.mute_btn.setFixedSize(30, 30)
+        self.mute_btn = QPushButton("")
+        self.mute_btn.setMinimumSize(28, 24)
+        self.mute_btn.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
         self.mute_btn.setToolTip(self.i18n.t("静音/取消静音 (M)"))
         controls_layout.addWidget(self.mute_btn)
         
@@ -162,13 +168,14 @@ class VideoControls(QWidget):
         self.volume_slider.setMinimum(0)
         self.volume_slider.setMaximum(100)
         self.volume_slider.setValue(100)
-        self.volume_slider.setFixedWidth(80)
+        self.volume_slider.setMinimumWidth(80)
         self.volume_slider.setToolTip(self.i18n.t("音量控制"))
         controls_layout.addWidget(self.volume_slider)
         
         # 全屏按钮
-        self.fullscreen_btn = QPushButton("⛶")
-        self.fullscreen_btn.setFixedSize(30, 30)
+        self.fullscreen_btn = QPushButton("")
+        self.fullscreen_btn.setMinimumSize(28, 24)
+        self.fullscreen_btn.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed))
         self.fullscreen_btn.setToolTip(self.i18n.t("全屏 (F)"))
         controls_layout.addWidget(self.fullscreen_btn)
         
@@ -299,11 +306,11 @@ class VideoControls(QWidget):
         """更新播放状态"""
         if state == QMediaPlayer.PlaybackState.PlayingState:
             self.is_playing = True
-            self.play_pause_btn.setText("⏸")
+            self.play_pause_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
             self.play_pause_btn.setToolTip(self.i18n.t("暂停 (空格)"))
         else:
             self.is_playing = False
-            self.play_pause_btn.setText("▶")
+            self.play_pause_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
             self.play_pause_btn.setToolTip(self.i18n.t("播放 (空格)"))
             
         # 停止状态时停止更新定时器
@@ -322,9 +329,9 @@ class VideoControls(QWidget):
         """设置静音状态"""
         self.is_muted = muted
         if muted:
-            self.mute_btn.setText("🔇")
+            self.mute_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolumeMuted))
         else:
-            self.mute_btn.setText("🔊")
+            self.mute_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume))
     
     def reset(self):
         """重置控制器状态"""
@@ -345,3 +352,25 @@ class VideoControls(QWidget):
     def toggle_mute(self):
         """切换静音状态"""
         self.mute_btn.click()
+        try:
+            from ...core.config import Config
+            cfg = Config()
+            scale = int(cfg.get('appearance.scale', 100) or 100)
+            base = int(cfg.get('appearance.scale_base', 70) or 70)
+            eff = max(60, min(150, int(round(base * scale / 100.0))))
+            icon_px = max(14, min(24, int(round(16 * eff / 100.0))))
+        except Exception:
+            icon_px = 16
+        icon_size = QSize(icon_px, icon_px)
+        self.play_pause_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.play_pause_btn.setIconSize(icon_size)
+        self.stop_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+        self.stop_btn.setIconSize(icon_size)
+        self.rewind_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekBackward))
+        self.rewind_btn.setIconSize(icon_size)
+        self.forward_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekForward))
+        self.forward_btn.setIconSize(icon_size)
+        self.mute_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume))
+        self.mute_btn.setIconSize(icon_size)
+        self.fullscreen_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
+        self.fullscreen_btn.setIconSize(icon_size)

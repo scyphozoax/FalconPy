@@ -89,10 +89,15 @@ class SiteLoginWidget(QWidget):
     def init_ui(self):
         """初始化界面"""
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setSpacing(10)
         # 顶部站点信息（图标、名称、描述）已移除，保留纯表单
         
         # 登录表单
         form_layout = QFormLayout()
+        form_layout.setContentsMargins(12, 8, 12, 8)
+        form_layout.setVerticalSpacing(10)
+        form_layout.setHorizontalSpacing(12)
         
         # 用户名
         self.username_input = QLineEdit()
@@ -118,6 +123,8 @@ class SiteLoginWidget(QWidget):
         
         # 登录按钮
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(10)
         
         self.login_button = QPushButton(self.i18n.t("登录"))
         self.login_button.clicked.connect(self.perform_login)
@@ -211,32 +218,57 @@ class LoginDialog(QDialog):
     
     def init_ui(self):
         """初始化界面"""
-        self.setWindowTitle(self.i18n.t("账号登录"))
-        self.setFixedSize(500, 600)
+        from PyQt6.QtWidgets import QApplication
+        self.setWindowTitle("")
+        try:
+            parent_w = self.parent().width() if self.parent() else None
+        except Exception:
+            parent_w = None
+        screen_w = QApplication.primaryScreen().availableGeometry().width()
+        max_w = int((parent_w or int(screen_w * 0.5)) * 1.0)
+        self.setMinimumWidth(460)
+        try:
+            self.setMaximumWidth(max_w)
+        except Exception:
+            pass
+        self.resize(min(max_w, 480), 560)
         self.setModal(True)
         
+        from PyQt6.QtWidgets import QScrollArea, QFrame
         layout = QVBoxLayout(self)
         
         # 标题
-        title_label = QLabel(self.i18n.t("账号登录"))
-        title_label.setFont(QFont("", 16, QFont.Weight.Bold))
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title_label)
         
-        # 说明文字
+        
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(10)
+
         desc_label = QLabel(self.i18n.t("登录后可以访问您的在线收藏夹和个人设置"))
         desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc_label.setStyleSheet("color: #666666; margin-bottom: 20px;")
-        layout.addWidget(desc_label)
+        content_layout.addWidget(desc_label)
         
-        # 网站选项卡
         self.tab_widget = QTabWidget()
-        layout.addWidget(self.tab_widget)
+        content_layout.addWidget(self.tab_widget)
         
-        # 进度条
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
-        layout.addWidget(self.progress_bar)
+        content_layout.addWidget(self.progress_bar)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        try:
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        except Exception:
+            pass
+        try:
+            scroll.setFrameShape(QFrame.NoFrame)
+        except Exception:
+            pass
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
         
         # 按钮
         button_layout = QHBoxLayout()

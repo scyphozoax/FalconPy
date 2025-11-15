@@ -317,22 +317,22 @@ class ImageThumbnail(QFrame):
         # 设置框架属性
         self.setFrameStyle(QFrame.Shape.Box)
         self.setFixedSize(
-            self._thumbnail_size[0] + 20, 
-            self._thumbnail_size[1] + 80
+            self._thumbnail_size[0] + 20,
+            self._thumbnail_size[1] + 20
         )
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         
         # 主布局
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setSpacing(0)
         
         # 图片标签
         self._image_label = QLabel()
         self._image_label.setFixedSize(*self._thumbnail_size)
         self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._image_label.setScaledContents(False)
-        layout.addWidget(self._image_label)
+        layout.addWidget(self._image_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # 叠加在图片上的ID毛玻璃标签
         self._id_overlay = QLabel(self._image_label)
@@ -345,31 +345,14 @@ class ImageThumbnail(QFrame):
         # 信息标签（移除：不再在卡片中显示标签框）
         self._info_label = None
         
-        # 按钮布局
-        button_layout = QHBoxLayout()
-        button_layout.setSpacing(8)
-        
-        # 查看按钮
-        self._view_button = QPushButton("查看")
-        self._view_button.setSizePolicy(
-            QSizePolicy.Policy.Expanding, 
-            QSizePolicy.Policy.Fixed
-        )
-        
-        # 移除收藏按钮，仅保留“查看”按钮
-        button_layout.addWidget(self._view_button)
-        
-        layout.addLayout(button_layout)
+        # 已移除底部按钮区域，缩略图居中显示
         
         # 更新信息显示
         self._update_info_display()
     
     def _connect_signals(self):
         """连接信号"""
-        if self._view_button:
-            self._view_button.clicked.connect(
-                lambda: self.clicked.emit(self._image_data)
-            )
+        # 已移除查看按钮，点击缩略图由事件管理器或外部处理
     
     def _update_info_display(self):
         """更新信息显示"""
@@ -513,9 +496,7 @@ class ImageThumbnail(QFrame):
 
         # 移除ID叠层样式更新（不显示）
         
-        # 更新按钮样式
-        if self._view_button:
-            self._view_button.setStyleSheet(ThumbnailStyle.VIEW_BUTTON_STYLE)
+        # 已移除按钮样式更新
         
         # 已移除收藏按钮样式更新
 

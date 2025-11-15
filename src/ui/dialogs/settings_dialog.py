@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QSettings, QProcess
 from PyQt6.QtGui import QFont, QColor, QPalette
 from ...core.database import DatabaseManager
 from ...core.i18n import I18n
+from ...core.config import Config
 
 
 class FavoritesTab(QWidget):
@@ -33,6 +34,9 @@ class FavoritesTab(QWidget):
         layout = QVBoxLayout(self)
         group = QGroupBox(self.i18n.t("默认收藏位置（每站点独立）"))
         form = QFormLayout(group)
+        form.setContentsMargins(12, 10, 12, 10)
+        form.setVerticalSpacing(10)
+        form.setHorizontalSpacing(12)
         # 预取本地收藏夹列表
         folders = self.db.get_favorites()
         for title, key in self.site_keys:
@@ -265,6 +269,9 @@ class DownloadTab(QWidget):
         # 下载路径设置
         path_group = QGroupBox(self.i18n.t("下载路径"))
         path_layout = QFormLayout(path_group)
+        path_layout.setContentsMargins(12, 10, 12, 10)
+        path_layout.setVerticalSpacing(10)
+        path_layout.setHorizontalSpacing(12)
         
         self.download_path = QLineEdit()
         self.download_path.setText(self.config.get('download.path', './downloads'))
@@ -295,6 +302,9 @@ class DownloadTab(QWidget):
         # 下载选项
         options_group = QGroupBox(self.i18n.t("下载选项"))
         options_layout = QFormLayout(options_group)
+        options_layout.setContentsMargins(12, 10, 12, 10)
+        options_layout.setVerticalSpacing(10)
+        options_layout.setHorizontalSpacing(12)
         
         self.download_original = QCheckBox(self.i18n.t("下载原图（如果可用）"))
         self.download_original.setChecked(self.config.get('download.download_original', True))
@@ -347,19 +357,40 @@ class SettingsDialog(QDialog):
         self.init_ui()
     
     def init_ui(self):
-        self.setWindowTitle(self.i18n.t("设置"))
-        self.setFixedSize(600, 500)
+        self.setWindowTitle("")
+        from PyQt6.QtWidgets import QApplication
+        try:
+            parent_w = self.parent().width() if self.parent() else None
+        except Exception:
+            parent_w = None
+        screen_w = QApplication.primaryScreen().availableGeometry().width()
+        max_w = int((parent_w or int(screen_w * 0.6)) * 1.0)
+        self.setMinimumWidth(520)
+        try:
+            self.setMaximumWidth(max_w)
+        except Exception:
+            pass
+        self.resize(min(max_w, 600), 520)
         self.setModal(True)
         
         self._main_layout = QVBoxLayout(self)
+        self._main_layout.setContentsMargins(12, 10, 12, 12)
+        self._main_layout.setSpacing(10)
         
-        title_label = QLabel(self.i18n.t("应用程序设置"))
-        title_label.setFont(QFont("", 16, QFont.Weight.Bold))
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._main_layout.addWidget(title_label)
         
+        
+        # 内容滚动容器
+        from PyQt6.QtWidgets import QScrollArea, QFrame
+        self._content = QWidget()
+        self._content_layout = QVBoxLayout(self._content)
+        self._content_layout.setContentsMargins(0, 0, 0, 0)
+        self._content_layout.setSpacing(10)
+
         lang_group = QGroupBox(self.i18n.t("语言"))
         lang_form = QFormLayout(lang_group)
+        lang_form.setContentsMargins(12, 10, 12, 10)
+        lang_form.setVerticalSpacing(10)
+        lang_form.setHorizontalSpacing(12)
         self.language_box = QComboBox()
         langs = I18n.supported_languages()
         for code, name in langs.items():
@@ -368,15 +399,48 @@ class SettingsDialog(QDialog):
         idx = max(0, self.language_box.findData(current_lang))
         self.language_box.setCurrentIndex(idx)
         lang_form.addRow(self.i18n.t("语言"), self.language_box)
-        self._main_layout.addWidget(lang_group)
+        self._content_layout.addWidget(lang_group)
+
+        ui_group = QGroupBox(self.i18n.t("界面设置"))
+        ui_form = QFormLayout(ui_group)
+        ui_form.setContentsMargins(12, 10, 12, 10)
+        ui_form.setVerticalSpacing(10)
+        ui_form.setHorizontalSpacing(12)
+        self.scale_spin = QSpinBox()
+        self.scale_spin.setRange(60, 150)
+        try:
+            self.scale_spin.setValue(int(self.config.get('appearance.scale_base', 70) or 70))
+        except Exception:
+            self.scale_spin.setValue(70)
+        self.scale_spin.setSuffix(" %")
+        ui_form.addRow(self.i18n.t("默认缩放"), self.scale_spin)
+        self._content_layout.addWidget(ui_group)
         
         self.download_tab = DownloadTab(self.config, self.i18n)
-        self._main_layout.addWidget(self.download_tab)
-        
+        self._content_layout.addWidget(self.download_tab)
+
+        self.update_tab = UpdateTab(self.config, self.i18n)
+        self._content_layout.addWidget(self.update_tab)
+
         self.favorites_tab = FavoritesTab(self.config, self.i18n)
-        self._main_layout.addWidget(self.favorites_tab)
+        self._content_layout.addWidget(self.favorites_tab)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        try:
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        except Exception:
+            pass
+        try:
+            scroll.setFrameShape(QFrame.NoFrame)
+        except Exception:
+            pass
+        scroll.setWidget(self._content)
+        self._main_layout.addWidget(scroll)
         
         button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(10)
         
         self.reset_button = QPushButton(self.i18n.t("重置默认"))
         self.reset_button.clicked.connect(self.reset_to_defaults)
@@ -401,12 +465,19 @@ class SettingsDialog(QDialog):
     
     def accept_settings(self):
         self.config.set('appearance.language', self.language_box.currentData())
+        try:
+            # 将用户设置的值定义为新的默认：更新 scale_base，并把 scale 归一为 100
+            new_base = int(self.scale_spin.value())
+            self.config.set('appearance.scale_base', new_base)
+            self.config.set('appearance.scale', 100)
+        except Exception:
+            pass
         self.download_tab.save_settings()
+        self.update_tab.save_settings()
         self.favorites_tab.save_settings()
         self.config.save_config()
         self.settings_changed.emit()
-        QMessageBox.information(self, self.i18n.t("设置"), self.i18n.t("设置已保存，部分设置需要重启应用程序后生效。"))
-        self.accept()
+        QMessageBox.information(self, self.i18n.t("设置"), self.i18n.t("设置已保存并已应用。部分设置需要重启应用程序后生效。"))
 
     def reset_to_defaults(self):
         reply = QMessageBox.question(
@@ -420,16 +491,27 @@ class SettingsDialog(QDialog):
         current_lang = self.config.get('appearance.language', 'zh_CN')
         idx = max(0, self.language_box.findData(current_lang))
         self.language_box.setCurrentIndex(idx)
+        try:
+            self.config.set('appearance.scale_base', 70)
+            self.config.set('appearance.scale', 100)
+            self.scale_spin.setValue(70)
+        except Exception:
+            self.scale_spin.setValue(70)
         parent = self.download_tab.parent()
-        self._main_layout.removeWidget(self.download_tab)
+        self._content_layout.removeWidget(self.download_tab)
         self.download_tab.deleteLater()
         self.download_tab = DownloadTab(self.config, self.i18n)
-        self._main_layout.insertWidget(self._main_layout.count()-1, self.download_tab)
+        self._content_layout.addWidget(self.download_tab)
+        parent = self.update_tab.parent()
+        self._content_layout.removeWidget(self.update_tab)
+        self.update_tab.deleteLater()
+        self.update_tab = UpdateTab(self.config, self.i18n)
+        self._content_layout.addWidget(self.update_tab)
         parent = self.favorites_tab.parent()
-        self._main_layout.removeWidget(self.favorites_tab)
+        self._content_layout.removeWidget(self.favorites_tab)
         self.favorites_tab.deleteLater()
         self.favorites_tab = FavoritesTab(self.config, self.i18n)
-        self._main_layout.insertWidget(self._main_layout.count()-1, self.favorites_tab)
+        self._content_layout.addWidget(self.favorites_tab)
         QMessageBox.information(self, self.i18n.t("重置完成"), self.i18n.t("所有设置已重置为默认值。"))
 
     def restart_application(self):
@@ -458,3 +540,58 @@ class SettingsDialog(QDialog):
             QApplication.instance().quit()
         except Exception as e:
             QMessageBox.warning(self, self.i18n.t("重启失败"), self.i18n.t("无法启动新进程：") + str(e))
+
+class UpdateTab(QWidget):
+    def __init__(self, config, i18n: I18n | None = None):
+        super().__init__()
+        self.config = config
+        self.i18n = i18n or I18n(config.get('appearance.language', 'zh_CN'))
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        group = QGroupBox(self.i18n.t("更新设置"))
+        form = QFormLayout(group)
+
+        self.source_box = QComboBox()
+        self.source_box.addItem('JSON', 'json')
+        self.source_box.addItem('GitHub', 'github')
+        src = (self.config.get('updates.source', 'json') or 'json')
+        idx = max(0, self.source_box.findData(src))
+        self.source_box.setCurrentIndex(idx)
+
+        self.enabled_box = QCheckBox(self.i18n.t("启用自动检查"))
+        self.enabled_box.setChecked(bool(self.config.get('updates.enabled', True)))
+
+        self.interval_spin = QSpinBox()
+        self.interval_spin.setRange(5, 1440)
+        self.interval_spin.setValue(int(self.config.get('updates.interval_minutes', 60)))
+        self.interval_spin.setSuffix(" min")
+
+        self.feed_edit = QLineEdit()
+        self.feed_edit.setText(self.config.get('updates.feed_url', ''))
+
+        self.channel_edit = QLineEdit()
+        self.channel_edit.setText(self.config.get('updates.channel', 'stable'))
+
+        self.repo_edit = QLineEdit()
+        self.repo_edit.setPlaceholderText('owner/repo')
+        self.repo_edit.setText(self.config.get('updates.github_repo', ''))
+
+        form.addRow(self.i18n.t("更新源类型:"), self.source_box)
+        form.addRow(self.enabled_box)
+        form.addRow(self.i18n.t("检查间隔:"), self.interval_spin)
+        form.addRow(self.i18n.t("版本源地址:"), self.feed_edit)
+        form.addRow(self.i18n.t("GitHub 仓库:"), self.repo_edit)
+        form.addRow(self.i18n.t("更新通道:"), self.channel_edit)
+
+        layout.addWidget(group)
+        layout.addStretch()
+
+    def save_settings(self):
+        self.config.set('updates.source', self.source_box.currentData())
+        self.config.set('updates.enabled', self.enabled_box.isChecked())
+        self.config.set('updates.interval_minutes', int(self.interval_spin.value()))
+        self.config.set('updates.feed_url', self.feed_edit.text().strip())
+        self.config.set('updates.github_repo', self.repo_edit.text().strip())
+        self.config.set('updates.channel', self.channel_edit.text().strip())

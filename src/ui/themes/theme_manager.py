@@ -5,7 +5,7 @@
 
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtGui import QPalette, QColor
+from PyQt6.QtGui import QPalette, QColor, QFontMetrics
 
 class ThemeManager(QObject):
     """主题管理器"""
@@ -1038,11 +1038,12 @@ class ThemeManager(QObject):
             }
             
             QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
+                width: 14px;
+                height: 14px;
                 border: 2px solid rgba(0, 0, 0, 0.3);
-                border-radius: 4px;
+                border-radius: 3px;
                 background-color: rgba(255, 255, 255, 0.9);
+                margin-right: 8px;
             }
             
             QCheckBox::indicator:checked {
@@ -1060,11 +1061,12 @@ class ThemeManager(QObject):
             }
             
             QRadioButton::indicator {
-                width: 18px;
-                height: 18px;
+                width: 14px;
+                height: 14px;
                 border: 2px solid rgba(0, 0, 0, 0.3);
-                border-radius: 9px;
+                border-radius: 7px;
                 background-color: rgba(255, 255, 255, 0.9);
+                margin-right: 8px;
             }
             
             QRadioButton::indicator:checked {
@@ -1608,11 +1610,12 @@ class ThemeManager(QObject):
             }
             
             QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
+                width: 14px;
+                height: 14px;
                 border: 2px solid rgba(255, 255, 255, 0.3);
-                border-radius: 4px;
+                border-radius: 3px;
                 background-color: rgba(255, 255, 255, 0.1);
+                margin-right: 8px;
             }
             
             QCheckBox::indicator:checked {
@@ -1630,11 +1633,12 @@ class ThemeManager(QObject):
             }
             
             QRadioButton::indicator {
-                width: 18px;
-                height: 18px;
+                width: 14px;
+                height: 14px;
                 border: 2px solid rgba(255, 255, 255, 0.3);
-                border-radius: 9px;
+                border-radius: 7px;
                 background-color: rgba(255, 255, 255, 0.1);
+                margin-right: 8px;
             }
             
             QRadioButton::indicator:checked {
@@ -1847,15 +1851,32 @@ class ThemeManager(QObject):
         """应用主题"""
         if theme_name not in self.themes:
             theme_name = "light"
-        
         self.current_theme = theme_name
         style = self.themes[theme_name]
-        
+        try:
+            fm = QFontMetrics(QApplication.instance().font())
+            sz = max(10, min(16, int(round(fm.height() * 0.65))))
+        except Exception:
+            sz = 12
+        override = f"""
+            QCheckBox::indicator {{
+                width: {sz}px;
+                height: {sz}px;
+                border-radius: 3px;
+                margin-right: 6px;
+            }}
+            QRadioButton::indicator {{
+                width: {sz}px;
+                height: {sz}px;
+                border-radius: {max(5, sz//2)}px;
+                margin-right: 6px;
+            }}
+        """
+        style = style + "\n" + override
         if widget:
             widget.setStyleSheet(style)
         else:
             QApplication.instance().setStyleSheet(style)
-        
         self.theme_changed.emit(theme_name)
     
     def get_current_theme(self):

@@ -35,11 +35,25 @@ class SiteLoginDialog(QDialog):
         self._init_ui()
 
     def _init_ui(self):
+        from PyQt6.QtWidgets import QApplication
         self.setWindowTitle(self.i18n.t("登录到 {site}").format(site=self.site_name))
-        self.setFixedSize(420, 360)
+        try:
+            parent_w = self.parent().width() if self.parent() else None
+        except Exception:
+            parent_w = None
+        screen_w = QApplication.primaryScreen().availableGeometry().width()
+        max_w = int((parent_w or int(screen_w * 0.5)) * 1.0)
+        self.setMinimumWidth(360)
+        try:
+            self.setMaximumWidth(max_w)
+        except Exception:
+            pass
+        self.resize(min(max_w, 420), 320)
         self.setModal(True)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 10, 12, 12)
+        layout.setSpacing(10)
 
         title = QLabel(self.i18n.t("{site} 账号登录").format(site=self.site_name))
         title.setFont(QFont("", 14, QFont.Weight.Bold))

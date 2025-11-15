@@ -228,18 +228,34 @@ class MainWindow(QMainWindow):
             info = self.update_manager.check_now()
             if info.get('has_update'):
                 ver = info.get('latest_version') or ''
+                ignored = set(self.config.get('updates.ignore_versions', []) or [])
+                last = self.config.get('updates.last_notified', None)
+                if ver in ignored or ver == last:
+                    return
                 self.status_bar.showMessage(self.i18n.t("发现新版本: {ver}").format(ver=ver), 8000)
                 msg = QMessageBox(self)
                 msg.setWindowTitle(self.i18n.t('更新可用'))
                 msg.setText(self.i18n.t('发现新版本 {ver}').format(ver=ver))
                 msg.setInformativeText(self.i18n.t('是否前往下载页面？'))
-                msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                ret = msg.exec()
-                if ret == QMessageBox.StandardButton.Yes:
+                download_btn = msg.addButton(self.i18n.t('前往下载'), QMessageBox.ButtonRole.AcceptRole)
+                later_btn = msg.addButton(self.i18n.t('稍后提醒'), QMessageBox.ButtonRole.RejectRole)
+                ignore_btn = msg.addButton(self.i18n.t('忽略此版本'), QMessageBox.ButtonRole.DestructiveRole)
+                msg.exec()
+                clicked = msg.clickedButton()
+                if clicked == download_btn:
                     url = info.get('download_url') or info.get('notes_url')
                     if url:
                         import webbrowser
                         webbrowser.open(url)
+                    self.config.set('updates.last_notified', ver)
+                    self.config.save_config()
+                elif clicked == ignore_btn:
+                    ignored.add(ver)
+                    self.config.set('updates.ignore_versions', list(ignored))
+                    self.config.save_config()
+                else:
+                    self.config.set('updates.last_notified', ver)
+                    self.config.save_config()
             else:
                 pass
         except Exception:
@@ -255,13 +271,26 @@ class MainWindow(QMainWindow):
                 msg.setWindowTitle(self.i18n.t('更新可用'))
                 msg.setText(self.i18n.t('发现新版本 {ver}').format(ver=ver))
                 msg.setInformativeText(self.i18n.t('是否前往下载页面？'))
-                msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-                ret = msg.exec()
-                if ret == QMessageBox.StandardButton.Yes:
+                download_btn = msg.addButton(self.i18n.t('前往下载'), QMessageBox.ButtonRole.AcceptRole)
+                later_btn = msg.addButton(self.i18n.t('稍后提醒'), QMessageBox.ButtonRole.RejectRole)
+                ignore_btn = msg.addButton(self.i18n.t('忽略此版本'), QMessageBox.ButtonRole.DestructiveRole)
+                msg.exec()
+                clicked = msg.clickedButton()
+                if clicked == download_btn:
                     url = info.get('download_url') or info.get('notes_url')
                     if url:
                         import webbrowser
                         webbrowser.open(url)
+                    self.config.set('updates.last_notified', ver)
+                    self.config.save_config()
+                elif clicked == ignore_btn:
+                    ignored = set(self.config.get('updates.ignore_versions', []) or [])
+                    ignored.add(ver)
+                    self.config.set('updates.ignore_versions', list(ignored))
+                    self.config.save_config()
+                else:
+                    self.config.set('updates.last_notified', ver)
+                    self.config.save_config()
             else:
                 self.status_bar.showMessage(self.i18n.t('已是最新版本'), 4000)
         except Exception as e:
@@ -1771,32 +1800,42 @@ class PerformancePanel(QDialog):
         # 应用当前主题到设置对话框
         current_theme = self.theme_manager.get_current_theme()
         self.theme_manager.apply_theme(current_theme, dialog)
+        try:
+            dialog.settings_changed.connect(self.apply_settings)
+        except Exception:
+            pass
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
             # 应用设置更改
             self.apply_settings()
     
     def apply_settings(self):
         """应用设置更改"""
-        # 应用主题设置 - 默认使用Windows 11主题
         theme = self.config.get('appearance.theme', 'win11')
         self.apply_theme(theme)
-        
-        # 应用字体设置 - Windows 11风格字体
+
         font_str = self.config.get('appearance.font', 'Segoe UI,10')
-        font_parts = font_str.split(',')
-        if len(font_parts) >= 2:
-            font_family = font_parts[0]
-            font_size = int(font_parts[1])
-            font = QFont(font_family, font_size)
-            font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-            self.setFont(font)
-        
-        # 刷新界面
-        # 应用语言并刷新菜单
+        scale = int(self.config.get('appearance.scale', 100) or 100)
+        scale_base = int(self.config.get('appearance.scale_base', 70) or 70)
+        eff_scale = max(60, min(150, int(round(scale_base * scale / 100.0))))
+        try:
+            base_family, base_size_str = font_str.split(',')[0], font_str.split(',')[1]
+            base_size = max(8, int(base_size_str))
+        except Exception:
+            base_family, base_size = 'Segoe UI', 10
+        scaled_size = max(8, int(round(base_size * (eff_scale / 100.0))))
+        app_font = QFont(base_family, scaled_size)
+        try:
+            app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        except Exception:
+            pass
+        try:
+            QApplication.instance().setFont(app_font)
+        except Exception:
+            self.setFont(app_font)
+
         try:
             lang = self.config.get('appearance.language', 'zh_CN')
             self.i18n.set_language(lang)
-            # 重新构建菜单文本
             self.menuBar().clear()
             self.create_menu_bar()
         except Exception:
