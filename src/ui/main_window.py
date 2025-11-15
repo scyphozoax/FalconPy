@@ -60,6 +60,10 @@ class MainWindow(QMainWindow):
         self.fav_source = 'local'  # local | online | merge
         self.update_manager = UpdateManager(self.config)
         self.update_timer = None
+        self._get_post_threads = []
+        self._last_query = ''
+        self._last_site = ''
+        self._last_page = 1
         
         # 设置API管理器
         self.setup_api_manager()
@@ -459,14 +463,45 @@ class MainWindow(QMainWindow):
 
     def refresh_content(self):
         try:
-            self.perform_search()
+            site = self.site_selector.get_current_site()
+            if site == "yande.re":
+                site = "yandere"
+            self._last_site = site
+            page = getattr(self.image_grid, 'current_page', None) or self._last_page or 1
+            query = self._last_query
+            from .threads.api_search_thread import APISearchThread
+            if hasattr(self, 'current_search_thread') and self.current_search_thread:
+                try:
+                    if self.current_search_thread.isRunning():
+                        try:
+                            if hasattr(self.current_search_thread, 'cancel'):
+                                self.current_search_thread.cancel()
+                        except Exception:
+                            pass
+                        if not self.current_search_thread.wait(1000):
+                            self.current_search_thread.terminate()
+                            self.current_search_thread.wait()
+                except Exception:
+                    pass
+            self.current_search_thread = APISearchThread(self.api_manager, site, query, int(page), 20)
+            self.current_search_thread.results_ready.connect(self._on_search_results)
+            self.current_search_thread.error.connect(self._on_search_error)
+            try:
+                self.status_bar.showMessage(self.i18n.t("正在刷新第 {page} 页").format(page=int(page)))
+            except Exception:
+                pass
+            self.current_search_thread.start()
         except Exception:
             pass
 
     def on_site_changed(self, site: str):
         try:
+            s = site
+            if s == "yande.re":
+                s = "yandere"
+            self._last_site = s
             self.status_bar.showMessage(self.i18n.t("已切换到: {site}").format(site=site))
-            self.perform_search()
+            self.refresh_content()
         except Exception:
             pass
 
@@ -870,6 +905,52 @@ class MainWindow(QMainWindow):
         self.config.set('window.maximized', self.isMaximized())
         self.config.save_config()
     
+    def closeEvent(self, event):
+        try:
+            if hasattr(self, 'current_search_thread') and self.current_search_thread:
+                try:
+                    if self.current_search_thread.isRunning():
+                        try:
+                            if hasattr(self.current_search_thread, 'cancel'):
+                                self.current_search_thread.cancel()
+                        except Exception:
+                            pass
+                        if not self.current_search_thread.wait(1000):
+                            self.current_search_thread.terminate()
+                            self.current_search_thread.wait()
+                except Exception:
+                    pass
+            for t in list(getattr(self, '_get_post_threads', []) or []):
+                try:
+                    if t.isRunning():
+                        t.wait(2000)
+                except Exception:
+                    pass
+            for v in list(getattr(self, 'image_viewers', []) or []):
+                try:
+                    rt = getattr(v, 'resolve_thread', None)
+                    if rt and rt.isRunning():
+                        try:
+                            rt.terminate()
+                            rt.wait()
+                        except Exception:
+                            pass
+                    dt = getattr(v, 'download_thread', None)
+                    if dt and dt.isRunning():
+                        try:
+                            dt.terminate()
+                            dt.wait()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            super().closeEvent(event)
+        except Exception:
+            pass
+    
     def perform_search(self):
         """执行搜索"""
         try:
@@ -880,6 +961,11 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         query = self.search_input.text().strip()
+        try:
+            if self._try_open_url_in_viewer(query):
+                return
+        except Exception:
+            pass
         # 允许空查询：各站点通常会返回默认最新/热门内容
 
         site = self.site_selector.get_current_site()
@@ -907,6 +993,9 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         
+        self._last_query = query
+        self._last_site = site
+        self._last_page = 1
         self.current_search_thread = APISearchThread(self.api_manager, site, query, 1, 20)
         self.current_search_thread.results_ready.connect(self._on_search_results)
         self.current_search_thread.error.connect(self._on_search_error)
@@ -921,6 +1010,149 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         self.current_search_thread.start()
+
+    def _extract_site_from_netloc(self, netloc: str):
+        try:
+            n = (netloc or '').lower()
+            if 'danbooru.donmai.us' in n:
+                return 'danbooru'
+            if 'konachan.net' in n:
+                return 'konachan'
+            if 'yande.re' in n:
+                return 'yandere'
+        except Exception:
+            pass
+        return None
+
+    def _open_viewer_single(self, image_data: dict):
+        from .widgets.image_viewer import ImageViewerDialog
+        viewer = ImageViewerDialog(image_data, None, images_list=[image_data], current_index=0)
+        viewer.favorite_toggled.connect(self.on_favorite_toggled)
+        viewer.download_requested.connect(self.download_image)
+        viewer.tag_clicked.connect(self.on_viewer_tag_clicked)
+        viewer.show()
+        if not hasattr(self, 'image_viewers'):
+            self.image_viewers = []
+        self.image_viewers.append(viewer)
+        try:
+            viewer.destroyed.connect(self._on_viewer_destroyed)
+        except Exception:
+            pass
+
+    def _try_open_url_in_viewer(self, text: str) -> bool:
+        try:
+            from urllib.parse import urlparse
+            u = urlparse(text)
+            if not u.scheme or not u.netloc:
+                return False
+            if u.scheme not in ('http', 'https'):
+                return False
+            site = self._extract_site_from_netloc(u.netloc)
+            if not site:
+                return False
+            url = text
+            path = u.path or ''
+            base = url.split('?')[0]
+            ext = ''
+            try:
+                if '.' in base:
+                    ext = base.rsplit('.', 1)[-1].lower()
+            except Exception:
+                ext = ''
+            media_exts = {'jpg','jpeg','png','gif','webp','mp4','webm'}
+            is_direct = (ext in media_exts) or any(seg in path for seg in ('/data/', '/image/', '/original/', '/jpeg/', '/png/'))
+            if is_direct:
+                data = {'site': site, 'file_url': url, 'preview_url': url}
+                if ext:
+                    data['file_ext'] = ext
+                try:
+                    self._open_viewer_single(data)
+                except Exception:
+                    pass
+                return True
+            if site in ('konachan', 'yandere'):
+                data = {'site': site, 'post_url': url}
+                try:
+                    self._open_viewer_single(data)
+                except Exception:
+                    pass
+                return True
+            if site == 'danbooru' and path.startswith('/posts/'):
+                parts = [p for p in path.split('/') if p]
+                post_id = parts[1] if len(parts) >= 2 else ''
+                if post_id.isdigit():
+                    try:
+                        from PyQt6.QtCore import QThread, pyqtSignal
+                        class _GetPostThread(QThread):
+                            ready = pyqtSignal(dict)
+                            error = pyqtSignal(str)
+                            def __init__(self, api_manager, site, pid):
+                                super().__init__()
+                                self.api_manager = api_manager
+                                self.site = site
+                                self.pid = pid
+                            def run(self):
+                                try:
+                                    from .threads.api_search_thread import _ensure_shared_loop
+                                    loop = _ensure_shared_loop()
+                                    import asyncio, concurrent.futures
+                                    f = asyncio.run_coroutine_threadsafe(
+                                        self.api_manager.get_post(self.site, self.pid), loop
+                                    )
+                                    try:
+                                        data = f.result()
+                                    except concurrent.futures.CancelledError:
+                                        return
+                                    except Exception as e:
+                                        self.error.emit(str(e))
+                                        return
+                                    if isinstance(data, dict) and data:
+                                        self.ready.emit(data)
+                                    else:
+                                        self.error.emit('empty')
+                                except Exception as e:
+                                    try:
+                                        self.error.emit(str(e))
+                                    except Exception:
+                                        pass
+                        t = _GetPostThread(self.api_manager, 'danbooru', post_id)
+                        t.ready.connect(self._on_get_post_ready)
+                        t.error.connect(self._on_get_post_error)
+                        try:
+                            t.finished.connect(lambda: self._cleanup_get_post_thread(t))
+                        except Exception:
+                            pass
+                        self._get_post_threads.append(t)
+                        try:
+                            self.status_bar.showMessage(self.i18n.t("正在获取帖子详情..."), 2000)
+                        except Exception:
+                            pass
+                        t.start()
+                        return True
+                    except Exception:
+                        pass
+            return False
+        except Exception:
+            return False
+
+    def _on_get_post_ready(self, image_data: dict):
+        try:
+            self._open_viewer_single(image_data)
+        except Exception:
+            pass
+
+    def _on_get_post_error(self, msg: str):
+        try:
+            self.status_bar.showMessage(self.i18n.t("获取帖子失败: {msg}").format(msg=msg), 3000)
+        except Exception:
+            pass
+
+    def _cleanup_get_post_thread(self, thread):
+        try:
+            if thread in getattr(self, '_get_post_threads', []):
+                self._get_post_threads.remove(thread)
+        except Exception:
+            pass
 
     def _on_search_results(self, results: list, page: int, total_pages: int):
         """搜索结果回调（来自线程）"""
@@ -984,6 +1216,9 @@ class MainWindow(QMainWindow):
                             self.current_search_thread.wait()
                 except Exception:
                     pass
+            self._last_query = query
+            self._last_site = site
+            self._last_page = int(page)
             self.current_search_thread = APISearchThread(self.api_manager, site, query, int(page), 20)
             self.current_search_thread.results_ready.connect(self._on_search_results)
             self.current_search_thread.error.connect(self._on_search_error)

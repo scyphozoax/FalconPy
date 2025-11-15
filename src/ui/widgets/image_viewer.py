@@ -44,8 +44,21 @@ class ImageDownloadThread(QThread):
         """异步下载图片"""
         try:
             timeout = aiohttp.ClientTimeout(total=60)
+            # 为Konachan/Yande.re等站点添加必要的请求头以避免403
+            base = None
+            if 'konachan' in (self.url or ''):
+                base = 'https://konachan.net'
+            elif 'yande.re' in (self.url or ''):
+                base = 'https://yande.re'
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            }
+            if base:
+                headers['Referer'] = base
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(self.url) as response:
+                async with session.get(self.url, headers=headers, allow_redirects=True) as response:
                     if response.status == 200:
                         total_size = int(response.headers.get('content-length', 0))
                         downloaded = 0
@@ -93,21 +106,81 @@ class MoebooruResolveFileUrlThread(QThread):
 
     async def _resolve(self):
         timeout = aiohttp.ClientTimeout(total=30)
+        from urllib.parse import urlparse
+        p = urlparse(self.post_url)
+        base = 'https://konachan.net' if 'konachan' in (p.netloc or '') else 'https://yande.re'
+        alt_base = 'https://konachan.com' if 'konachan' in (p.netloc or '') else None
+
+        headers_html = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Referer': base,
+        }
+        headers_json = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        }
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(self.post_url) as resp:
-                if resp.status != 200:
-                    self.failed.emit(f"HTTP错误: {resp.status}")
+            # 先尝试通过 JSON API 获取原图，避免页面反爬导致的 403
+            segs = [s for s in (p.path or '').split('/') if s]
+            pid = ''
+            for s in reversed(segs):
+                if s.isdigit():
+                    pid = s
+                    break
+            if pid:
+                api_url = f"{base}/post.json?tags=id:{pid}"
+                data = None
+                try:
+                    async with session.get(api_url, headers=headers_json, allow_redirects=True) as r:
+                        if r.status == 200:
+                            try:
+                                data = await r.json()
+                            except Exception:
+                                data = None
+                        elif r.status == 403 and alt_base:
+                            alt_api = f"{alt_base}/post.json?tags=id:{pid}"
+                            async with session.get(alt_api, headers=headers_json, allow_redirects=True) as r2:
+                                if r2.status == 200:
+                                    try:
+                                        data = await r2.json()
+                                    except Exception:
+                                        data = None
+                except Exception:
+                    data = None
+                if isinstance(data, list) and data:
+                    d = data[0]
+                    url = d.get('file_url') or d.get('jpeg_url') or d.get('sample_url') or d.get('source')
+                    if url:
+                        abs_url = urljoin(base, url)
+                        ext = abs_url.split('?')[0].split('.')[-1].lower()
+                        self.resolved.emit({'file_url': abs_url, 'ext': ext})
+                        return
+
+            # 回退到页面解析（尽量带浏览器头与 Referer）
+            html = None
+            try:
+                async with session.get(self.post_url, headers=headers_html, allow_redirects=True) as resp:
+                    if resp.status == 200:
+                        html = await resp.text()
+                    elif resp.status == 403 and alt_base:
+                        alt_url = self.post_url.replace('konachan.net', 'konachan.com')
+                        async with session.get(alt_url, headers=headers_html, allow_redirects=True) as resp2:
+                            if resp2.status == 200:
+                                html = await resp2.text()
+            except Exception:
+                html = None
+            if html:
+                fu = self._extract_file_url(html)
+                if fu:
+                    abs_url = urljoin(self.post_url, fu)
+                    ext = abs_url.split('?')[0].split('.')[-1].lower()
+                    self.resolved.emit({'file_url': abs_url, 'ext': ext})
                     return
-                html = await resp.text()
 
-        file_url = self._extract_file_url(html)
-        if not file_url:
-            self.failed.emit("未找到原图链接")
-            return
-
-        abs_url = urljoin(self.post_url, file_url)
-        ext = abs_url.split('?')[0].split('.')[-1].lower()
-        self.resolved.emit({'file_url': abs_url, 'ext': ext})
+            self.failed.emit("HTTP错误: 403")
 
     def _extract_file_url(self, html: str) -> str | None:
         # 采用 lxml 优先解析，失败回退到 html.parser
