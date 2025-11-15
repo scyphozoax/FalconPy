@@ -15,7 +15,8 @@ class SessionManager:
     
     def __init__(self, config_dir: str = None):
         if config_dir is None:
-            config_dir = os.path.expanduser("~/.falconpy")
+            from .config import Config
+            config_dir = str(Config().app_dir)
         
         self.config_dir = config_dir
         self.sessions_file = os.path.join(config_dir, "sessions.json")

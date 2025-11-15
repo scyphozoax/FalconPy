@@ -6,7 +6,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QToolBar, QStatusBar, QSplitter, QTabWidget,
                             QComboBox, QLineEdit, QPushButton, QScrollArea,
-                            QGridLayout, QLabel, QFrame, QMenuBar, QMenu, QMessageBox, QDialog, QApplication)
+                            QGridLayout, QLabel, QFrame, QMenuBar, QMenu, QMessageBox, QDialog, QApplication, QProgressDialog)
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QTimer
 from PyQt6.QtGui import QAction, QIcon, QFont, QPalette, QColor, QFontDatabase
 import os
@@ -21,6 +21,9 @@ from .widgets.site_selector import SiteSelectorWidget
 from .dialogs.login_dialog import LoginDialog
 from .dialogs.account_management_dialog import AccountManagementDialog
 from .dialogs.settings_dialog import SettingsDialog
+from .dialogs.download_progress_dialog import DownloadProgressDialog
+from .dialogs.batch_download_dialog import BatchDownloadDialog
+from .threads.download_queue_thread import DownloadQueueThread, DownloadTask
 from .themes.theme_manager import ThemeManager
 from .threads.favorites_thread import FavoritesFetchThread
 from .threads.online_favorite_thread import OnlineFavoriteOpThread
@@ -566,13 +569,7 @@ class MainWindow(QMainWindow):
 
     def toggle_favorite(self, image_data):
         """切换图片收藏状态"""
-        # TODO: 实现收藏逻辑
         self.statusBar().showMessage(self.i18n.t("收藏功能待实现"), 2000)
-    
-    def download_image(self, image_data):
-        """下载图片"""
-        # TODO: 实现下载逻辑
-        self.statusBar().showMessage(self.i18n.t("下载功能待实现"), 2000)
     
     def create_toolbar(self):
         """创建工具栏"""
@@ -760,6 +757,7 @@ class MainWindow(QMainWindow):
             # 当前图片操作
             act_copy_link = menu.addAction(self.i18n.t("复制当前图片链接"))
             act_download = menu.addAction(self.i18n.t("下载当前图片"))
+            act_download_all = menu.addAction(self.i18n.t("批量下载当前页"))
             menu.addSeparator()
 
             # 目录与设置
@@ -797,6 +795,8 @@ class MainWindow(QMainWindow):
                 self.copy_current_image_link()
             elif action == act_download:
                 self.download_current_image()
+            elif action == act_download_all:
+                self.batch_download_current_page()
             elif action == act_open_dl:
                 self.open_downloads_dir()
             elif action == act_open_cache:
@@ -1245,6 +1245,144 @@ class MainWindow(QMainWindow):
             self._perf_panel.show()
         except Exception:
             pass
+
+    def download_image(self, image_data: dict):
+        try:
+            ext0 = (image_data.get('file_ext') or '').lower()
+            if ext0 in ['mp4', 'webm']:
+                url0 = image_data.get('file_url') or image_data.get('large_file_url') or image_data.get('preview_url')
+                if url0:
+                    import webbrowser
+                    webbrowser.open(url0)
+                    return
+                QMessageBox.warning(self, self.i18n.t("下载失败"), self.i18n.t("无法获取视频URL"))
+                return
+            base_path = self.config.get('download.path', './downloads')
+            auto_rename = self.config.get('download.auto_rename', True)
+            create_subfolders = self.config.get('download.create_subfolders', True)
+            download_original = self.config.get('download.download_original', True)
+            save_metadata = self.config.get('download.save_metadata', False)
+            max_file_size_mb = int(self.config.get('download.max_file_size', 50) or 50)
+            timeout = int(self.config.get('network.timeout', 30) or 30)
+            max_retries = int(self.config.get('network.max_retries', 3) or 3)
+
+            def _build_task(url: str) -> DownloadTask | None:
+                if not url:
+                    return None
+                site = (image_data.get('site') or 'unknown').lower()
+                post_id = str(image_data.get('id', 'unknown'))
+                ext = (image_data.get('file_ext') or Path(url).suffix.lstrip('.').lower() or 'jpg')
+                ext = ''.join(c for c in ext if c.isalnum()) or 'jpg'
+                base_dir = Path(base_path).expanduser()
+                if not base_dir.is_absolute():
+                    base_dir = Path(self.config.app_dir) / base_dir
+                save_dir = base_dir / site if create_subfolders else base_dir
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+                referer = None
+                pu = image_data.get('post_url') or ''
+                if pu:
+                    referer = pu
+                else:
+                    if site == 'danbooru' and post_id and post_id.isdigit():
+                        referer = f'https://danbooru.donmai.us/posts/{post_id}'
+                    elif site == 'konachan' and post_id and post_id.isdigit():
+                        referer = f'https://konachan.net/post/show/{post_id}'
+                    elif site == 'yandere' and post_id and post_id.isdigit():
+                        referer = f'https://yande.re/post/show/{post_id}'
+                if not referer:
+                    if site == 'danbooru':
+                        referer = 'https://danbooru.donmai.us'
+                    elif site == 'konachan':
+                        referer = 'https://konachan.net'
+                    elif site == 'yandere':
+                        referer = 'https://yande.re'
+                if referer:
+                    headers['Referer'] = referer
+                proxies = None
+                if self.config.get('network.use_proxy', False):
+                    host = self.config.get('network.proxy_host', '')
+                    port = self.config.get('network.proxy_port', 0)
+                    if host and port:
+                        proxy_url = f"http://{host}:{port}"
+                        proxies = {"http": proxy_url, "https": proxy_url}
+                return DownloadTask(url, site, post_id, ext, save_dir, headers, proxies, timeout, max_file_size_mb, image_data)
+
+            url_primary = image_data.get('file_url') if download_original else None
+            url_fallback = image_data.get('large_file_url') or image_data.get('preview_url') or image_data.get('thumbnail_url')
+            url = url_primary or url_fallback
+            if not url:
+                QMessageBox.warning(self, "错误", "无法获取可下载的文件URL")
+                return
+
+            task = _build_task(url)
+            if not task:
+                QMessageBox.warning(self, "错误", "无法创建下载任务")
+                return
+
+            progress = DownloadProgressDialog(self, i18n=self.i18n)
+            ttl = self.i18n.t("下载进度") if hasattr(self, 'i18n') else "下载进度"
+            filename = f"{task.site}_{task.post_id}.{task.ext}"
+            progress.setup(int(image_data.get('file_size', 0) or 0), 0, ttl, filename)
+            progress.show()
+
+            dl = DownloadQueueThread([task], auto_rename, save_metadata, max_retries)
+            self._single_dl_thread = dl
+            progress.canceled.connect(dl.cancel)
+
+            def _on_progress(idx, cur, total):
+                if total > 0:
+                    try:
+                        progress.set_value(cur)
+                    except Exception:
+                        pass
+                    try:
+                        pct = (cur / total) * 100.0
+                        mb_cur = cur / (1024 * 1024)
+                        mb_tot = total / (1024 * 1024)
+                        self.status_bar.showMessage(f"下载中 {mb_cur:.2f}/{mb_tot:.2f} MB ({pct:.0f}%)")
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        progress.set_text(f"已下载 {cur/(1024*1024):.2f} MB")
+                        self.status_bar.showMessage(f"下载中 {cur/(1024*1024):.2f} MB")
+                    except Exception:
+                        pass
+
+            def _on_finished(idx, ok, path, err):
+                try:
+                    progress.close()
+                except Exception:
+                    pass
+                if ok:
+                    self.status_bar.showMessage(self.i18n.t("下载完成: {file}").format(file=Path(path).name), 3000)
+                    QMessageBox.information(self, self.i18n.t("完成"), self.i18n.t("已保存到:\n{path}").format(path=path))
+                else:
+                    if (str(err) == '403' or '403' in str(err)) and url_primary and url_fallback and (url_fallback != url_primary):
+                        alt = _build_task(url_fallback)
+                        if alt:
+                            alt_progress = DownloadProgressDialog(self, i18n=self.i18n)
+                            alt_progress.setup(int(image_data.get('file_size', 0) or 0), 0, ttl, f"{alt.site}_{alt.post_id}.{alt.ext}")
+                            alt_progress.show()
+                            dl2 = DownloadQueueThread([alt], auto_rename, save_metadata, max_retries)
+                            self._single_dl_thread = dl2
+                            alt_progress.canceled.connect(dl2.cancel)
+                            dl2.task_progress.connect(lambda i,c,t: (_on_progress(i,c,t), alt_progress.set_value(c) if t>0 else alt_progress.set_text(f"已下载 {c/(1024*1024):.2f} MB")))
+                            dl2.task_finished.connect(lambda i,ok2,p2,e2: (
+                                alt_progress.close(),
+                                QMessageBox.information(self, self.i18n.t("完成"), self.i18n.t("已保存到:\n{path}").format(path=p2)) if ok2 else QMessageBox.warning(self, self.i18n.t("下载失败"), self.i18n.t("错误: {msg}").format(msg=str(e2)))
+                            ))
+                            dl2.start()
+                            return
+                    QMessageBox.warning(self, self.i18n.t("下载失败"), self.i18n.t("错误: {msg}").format(msg=str(err)))
+
+            dl.task_progress.connect(_on_progress)
+            dl.task_finished.connect(_on_finished)
+            dl.start()
+        except Exception as e:
+            QMessageBox.warning(self, self.i18n.t("下载失败"), self.i18n.t("错误: {msg}").format(msg=str(e)))
 
 class PerformancePanel(QDialog):
     def __init__(self, parent=None):
@@ -1702,109 +1840,6 @@ class PerformancePanel(QDialog):
         finally:
             self.current_fav_thread = None
     
-    def download_image(self, image_data: dict):
-        """下载图片到本地（遵循设置）"""
-        try:
-            # 读取下载设置
-            base_path = self.config.get('download.path', './downloads')
-            auto_rename = self.config.get('download.auto_rename', True)
-            create_subfolders = self.config.get('download.create_subfolders', True)
-            download_original = self.config.get('download.download_original', True)
-            save_metadata = self.config.get('download.save_metadata', False)
-            max_file_size_mb = self.config.get('download.max_file_size', 50)
-            timeout = self.config.get('network.timeout', 30)
-
-            # 选择下载URL
-            url = None
-            if download_original:
-                url = image_data.get('file_url')
-            if not url:
-                url = image_data.get('preview_url') or image_data.get('thumbnail_url')
-            if not url:
-                QMessageBox.warning(self, "错误", "无法获取可下载的文件URL")
-                return
-
-            # 检查大小限制（优先使用元数据）
-            size_bytes = int(image_data.get('file_size', 0) or 0)
-            if size_bytes > 0 and max_file_size_mb > 0:
-                if size_bytes / (1024 * 1024) > max_file_size_mb:
-                    QMessageBox.information(self, "提示", f"文件大小超过限制（>{max_file_size_mb}MB），已取消下载")
-                    return
-
-            # 计算保存路径
-            site = image_data.get('site', 'unknown')
-            post_id = str(image_data.get('id', 'unknown'))
-            ext = image_data.get('file_ext', '') or os.path.splitext(url)[1].lstrip('.').lower()
-            # 基础目录
-            base_dir = Path(base_path).expanduser()
-            if not base_dir.is_absolute():
-                # 相对路径基于应用目录
-                base_dir = Path.cwd() / base_dir
-            # 子目录（按站点）
-            save_dir = base_dir
-            if create_subfolders:
-                save_dir = base_dir / site
-            save_dir.mkdir(parents=True, exist_ok=True)
-
-            # 文件名：site_id.ext
-            def build_filename(n: int = 0):
-                suffix = f"_{n}" if n > 0 else ""
-                return save_dir / f"{site}_{post_id}{suffix}.{ext}"
-
-            target_path = build_filename(0)
-            if target_path.exists() and auto_rename:
-                n = 1
-                while build_filename(n).exists():
-                    n += 1
-                target_path = build_filename(n)
-
-            # 发起下载（stream）
-            self.status_bar.showMessage(f"正在下载 ID {post_id} 到 {str(target_path)}")
-            headers = {}
-            proxies = None
-            # 代理配置（目前仅 HTTP 简化）
-            if self.config.get('network.use_proxy', False):
-                host = self.config.get('network.proxy_host', '')
-                port = self.config.get('network.proxy_port', 0)
-                if host and port:
-                    proxy_url = f"http://{host}:{port}"
-                    proxies = {"http": proxy_url, "https": proxy_url}
-
-            with requests.get(url, headers=headers, stream=True, timeout=timeout, proxies=proxies) as r:
-                r.raise_for_status()
-                # 根据响应头再次校验大小
-                content_len = int(r.headers.get('Content-Length', '0') or 0)
-                if content_len > 0 and max_file_size_mb > 0:
-                    if content_len / (1024 * 1024) > max_file_size_mb:
-                        QMessageBox.information(self, "提示", f"响应体大小超过限制（>{max_file_size_mb}MB），已取消下载")
-                        return
-                # 写入文件
-                with open(target_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-
-            # 保存元数据
-            if save_metadata:
-                meta_path = target_path.with_suffix(target_path.suffix + '.json')
-                try:
-                    with open(meta_path, 'w', encoding='utf-8') as mf:
-                        json.dump(image_data, mf, ensure_ascii=False, indent=2)
-                except Exception as me:
-                    # 元数据写入失败不影响主文件
-                    print(f"写入元数据失败: {me}")
-
-            self.status_bar.showMessage(f"下载完成: {target_path.name}", 3000)
-            QMessageBox.information(self, "完成", f"已保存到:\n{str(target_path)}")
-        except requests.HTTPError as he:
-            QMessageBox.warning(self, "下载失败", f"HTTP错误: {str(he)}")
-            self.status_bar.showMessage("下载失败: HTTP错误", 3000)
-        except requests.RequestException as re:
-            QMessageBox.warning(self, "下载失败", f"网络错误: {str(re)}")
-            self.status_bar.showMessage("下载失败: 网络错误", 3000)
-        except Exception as e:
-            QMessageBox.warning(self, "下载失败", f"错误: {str(e)}")
-            self.status_bar.showMessage("下载失败: 未知错误", 3000)
     
     def refresh_content(self):
         """刷新内容"""
@@ -1835,7 +1870,7 @@ class PerformancePanel(QDialog):
             base_path = self.config.get('download.path', './downloads')
             path = Path(base_path).expanduser()
             if not path.is_absolute():
-                path = Path.cwd() / path
+                path = Path(self.config.app_dir) / path
             path.mkdir(parents=True, exist_ok=True)
             # Windows 优先使用系统方法打开
             try:
@@ -1872,7 +1907,7 @@ class PerformancePanel(QDialog):
     def open_thumbnails_dir(self):
         """打开缩略图目录"""
         try:
-            path = Path(getattr(self.cache_manager, 'thumbnails_dir', Path.home() / '.falconpy' / 'thumbnail'))
+            path = Path(getattr(self.cache_manager, 'thumbnails_dir', self.config.thumbnails_dir))
             path.mkdir(parents=True, exist_ok=True)
             if os.name == 'nt':
                 os.startfile(str(path))
@@ -2048,25 +2083,26 @@ class PerformancePanel(QDialog):
         theme = self.config.get('appearance.theme', 'win11')
         self.apply_theme(theme)
 
-        font_str = self.config.get('appearance.font', 'Segoe UI,10')
+        font_str = self.config.get('appearance.font', '')
         scale = int(self.config.get('appearance.scale', 100) or 100)
         scale_base = int(self.config.get('appearance.scale_base', 70) or 70)
         eff_scale = max(60, min(150, int(round(scale_base * scale / 100.0))))
-        try:
-            base_family, base_size_str = font_str.split(',')[0], font_str.split(',')[1]
-            base_size = max(8, int(base_size_str))
-        except Exception:
-            base_family, base_size = 'Segoe UI', 10
-        scaled_size = max(8, int(round(base_size * (eff_scale / 100.0))))
-        app_font = QFont(base_family, scaled_size)
-        try:
-            app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-        except Exception:
-            pass
-        try:
-            QApplication.instance().setFont(app_font)
-        except Exception:
-            self.setFont(app_font)
+        if font_str:
+            try:
+                base_family, base_size_str = font_str.split(',')[0], font_str.split(',')[1]
+                base_size = max(8, int(base_size_str))
+                scaled_size = max(8, int(round(base_size * (eff_scale / 100.0))))
+                app_font = QFont(base_family, scaled_size)
+                try:
+                    app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+                except Exception:
+                    pass
+                try:
+                    QApplication.instance().setFont(app_font)
+                except Exception:
+                    self.setFont(app_font)
+            except Exception:
+                pass
 
         try:
             lang = self.config.get('appearance.language', 'zh_CN')
@@ -2156,3 +2192,28 @@ class PerformancePanel(QDialog):
                 self.image_viewers.remove(viewer)
         except Exception:
             pass
+
+    def batch_download_current_page(self):
+        """批量下载当前页图片"""
+        try:
+            images = list(getattr(self.image_grid, 'current_images', []) or [])
+        except Exception:
+            images = []
+        if not images:
+            try:
+                self.status_bar.showMessage(self.i18n.t("当前页无图片"), 3000)
+            except Exception:
+                pass
+            return
+        try:
+            dlg = BatchDownloadDialog(self, images, i18n=self.i18n, config=self.config)
+            dlg.show()
+        except Exception as e:
+            try:
+                QMessageBox.warning(self, "错误", f"批量下载窗口打开失败：{str(e)}")
+            except Exception:
+                pass
+            try:
+                progress.close()
+            except Exception:
+                pass

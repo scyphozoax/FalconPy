@@ -162,6 +162,9 @@
   "水平镜像": "Voltear horizontal",
   "垂直镜像": "Voltear vertical",
   "图片信息": "Información de la imagen",
+  "查看详情": "Ver detalles",
+  "保存图片": "Guardar imagen",
+  "保存视频": "Guardar video",
   "标签": "Etiquetas",
   "♡ 添加收藏": "Añadir a favoritos",
   "♥ 已收藏": "Favorito",
@@ -211,5 +214,8 @@
   "音量控制": "Volumen",
   "全屏 (F)": "Pantalla completa (F)",
   "暂停 (空格)": "Pausar (Espacio)",
-  "播放 (空格)": "Reproducir (Espacio)"
+  "播放 (空格)": "Reproducir (Espacio)",
+  "查看详情": "Ver detalles",
+  "保存图片": "Guardar imagen",
+  "保存视频": "Guardar video"
 }

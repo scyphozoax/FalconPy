@@ -157,10 +157,15 @@ class AppearanceTab(QWidget):
         self.font_file_box = QComboBox()
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(8, 48)
-        self.font_size_spin.setValue(int(self.config.get('appearance.font', 'Segoe UI,10').split(',')[1]))
+        try:
+            _fs = str(self.config.get('appearance.font', '') or '')
+            _size = int(_fs.split(',')[1]) if ',' in _fs else 10
+        except Exception:
+            _size = 10
+        self.font_size_spin.setValue(_size)
         self.font_index_to_family = {}
         selected_idx = -1
-        current_font = self.config.get('appearance.font', 'Segoe UI,10')
+        current_font = self.config.get('appearance.font', '')
         cf = current_font.split(',')[0]
         try:
             from PyQt6.QtGui import QFontDatabase
@@ -238,9 +243,12 @@ class AppearanceTab(QWidget):
         # 保存字体（族,字号）
         try:
             idx = self.font_file_box.currentIndex()
-            fam = self.font_index_to_family.get(idx, 'Segoe UI')
+            fam = self.font_index_to_family.get(idx)
             size = int(self.font_size_spin.value())
-            self.config.set('appearance.font', f"{fam},{size}")
+            if fam:
+                self.config.set('appearance.font', f"{fam},{size}")
+            else:
+                self.config.set('appearance.font', "")
         except Exception:
             pass
         # 保存语言

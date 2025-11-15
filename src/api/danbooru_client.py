@@ -45,7 +45,7 @@ class DanbooruClient(BaseAPIClient):
         }
         try:
             # 首选 counts 接口
-            resp = await self.get('/counts/posts.json', params=params)
+            resp = await self.get('/counts/posts.json', params=params, headers=self._get_auth_headers())
             # 期望结构: {"counts": {"posts": <int>}}
             if isinstance(resp, dict):
                 counts = resp.get('counts') or resp
@@ -56,7 +56,7 @@ class DanbooruClient(BaseAPIClient):
             pass
         # 回退：/posts/count.json?tags=...
         try:
-            resp2 = await self.get('/posts/count.json', params=params)
+            resp2 = await self.get('/posts/count.json', params=params, headers=self._get_auth_headers())
             # 期望结构: {"count": <int>} 或直接是整数
             if isinstance(resp2, dict):
                 value = resp2.get('count')
@@ -78,7 +78,7 @@ class DanbooruClient(BaseAPIClient):
         }
         
         try:
-            response = await self.get('/posts.json', params=params)
+            response = await self.get('/posts.json', params=params, headers=self._get_auth_headers())
             
             if isinstance(response, list):
                 return [self.format_image_data(item) for item in response]
@@ -94,7 +94,7 @@ class DanbooruClient(BaseAPIClient):
         params = self._get_auth_params()
         
         try:
-            response = await self.get(f'/posts/{post_id}.json', params=params)
+            response = await self.get(f'/posts/{post_id}.json', params=params, headers=self._get_auth_headers())
             return self.format_image_data(response)
         except Exception as e:
             print(f"获取Danbooru帖子失败: {e}")

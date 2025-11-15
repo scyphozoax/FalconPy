@@ -162,6 +162,9 @@
   "水平镜像": "Horizontal spiegeln",
   "垂直镜像": "Vertikal spiegeln",
   "图片信息": "Bildinfo",
+  "查看详情": "Details anzeigen",
+  "保存图片": "Bild speichern",
+  "保存视频": "Video speichern",
   "标签": "Tags",
   "♡ 添加收藏": "Zu Favoriten hinzufügen",
   "♥ 已收藏": "Favorisiert",
@@ -211,5 +214,8 @@
   "音量控制": "Lautstärke",
   "全屏 (F)": "Vollbild (F)",
   "暂停 (空格)": "Pause (Leertaste)",
-  "播放 (空格)": "Abspielen (Leertaste)"
+  "播放 (空格)": "Abspielen (Leertaste)",
+  "查看详情": "Details anzeigen",
+  "保存图片": "Bild speichern",
+  "保存视频": "Video speichern"
 }

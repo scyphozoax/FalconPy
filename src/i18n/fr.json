@@ -211,5 +211,8 @@
   "音量控制": "Volume",
   "全屏 (F)": "Plein écran (F)",
   "暂停 (空格)": "Pause (Espace)",
-  "播放 (空格)": "Lecture (Espace)"
+  "播放 (空格)": "Lecture (Espace)",
+  "查看详情": "Voir les détails",
+  "保存图片": "Enregistrer l'image",
+  "保存视频": "Enregistrer la vidéo"
 }

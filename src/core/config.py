@@ -12,7 +12,19 @@ class Config:
     """应用程序配置管理"""
     
     def __init__(self):
-        self.app_dir = Path.home() / ".falconpy"
+        try:
+            import sys
+            if getattr(sys, 'frozen', False):
+                root_dir = Path(sys.executable).parent
+            else:
+                root_dir = Path(__file__).resolve().parents[2]
+        except Exception:
+            try:
+                root_dir = Path(__file__).resolve().parents[2]
+            except Exception:
+                import sys
+                root_dir = Path(getattr(sys, 'executable', __file__)).parent
+        self.app_dir = root_dir
         self.config_file = self.app_dir / "config.json"
         self.cache_dir = self.app_dir / "cache"
         # 专用缩略图目录（隐藏目录）
@@ -31,7 +43,7 @@ class Config:
             },
             "appearance": {
                 "theme": "dark",
-                "font": "等距更纱黑体,11",
+                "font": "",
                 "scale": 100,
                 "scale_base": 70,
                 "show_thumbnails": True,

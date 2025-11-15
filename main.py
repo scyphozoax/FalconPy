@@ -46,20 +46,22 @@ def main():
                 except Exception:
                     pass
             try:
-                font_str = config.get('appearance.font', 'Segoe UI,10')
-                scale = int(config.get('appearance.scale', 100) or 100)
-                scale_base = int(config.get('appearance.scale_base', 70) or 70)
-                eff_scale = max(60, min(150, int(round(scale_base * scale / 100.0))))
-                parts = font_str.split(',')
-                fam = parts[0] if parts else 'Segoe UI'
-                size = int(parts[1]) if len(parts) > 1 else 10
-                scaled = max(8, int(round(size * (eff_scale / 100.0))))
-                f = QFont(fam, scaled)
-                try:
-                    f.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-                except Exception:
-                    pass
-                app.setFont(f)
+                font_str = config.get('appearance.font', '')
+                if font_str:
+                    scale = int(config.get('appearance.scale', 100) or 100)
+                    scale_base = int(config.get('appearance.scale_base', 70) or 70)
+                    eff_scale = max(60, min(150, int(round(scale_base * scale / 100.0))))
+                    parts = font_str.split(',')
+                    fam = parts[0] if parts else ''
+                    size = int(parts[1]) if len(parts) > 1 else 10
+                    if fam:
+                        scaled = max(8, int(round(size * (eff_scale / 100.0))))
+                        f = QFont(fam, scaled)
+                        try:
+                            f.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+                        except Exception:
+                            pass
+                        app.setFont(f)
             except Exception:
                 pass
         except Exception as e:

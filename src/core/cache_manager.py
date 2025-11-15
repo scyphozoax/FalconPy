@@ -28,8 +28,12 @@ class CacheManager(QObject):
             cfg = Config()
             self.thumbnails_dir = Path(cfg.thumbnails_dir)
         except Exception:
-            # 兜底：位于app_dir下的thumbnail目录
-            self.thumbnails_dir = Path.home() / ".falconpy" / "thumbnail"
+            # 兜底：使用应用目录下的缩略图目录
+            try:
+                from .config import Config
+                self.thumbnails_dir = Path(Config().app_dir) / "thumbnail"
+            except Exception:
+                self.thumbnails_dir = Path(__file__).resolve().parents[2] / "thumbnail"
         
         # 内存缓存
         self.memory_cache: Dict[str, QPixmap] = {}

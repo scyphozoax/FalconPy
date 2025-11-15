@@ -19,3 +19,9 @@ node_modules/
 .coverage
 coverage.xml
 *.log
+downloads/
+cache/
+thumbnail/
+favorites/
+config.json
+falconpy.db

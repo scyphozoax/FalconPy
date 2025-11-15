@@ -16,7 +16,8 @@ class DatabaseManager:
     
     def __init__(self, db_path: str = None):
         if db_path is None:
-            config_dir = Path.home() / ".falconpy"
+            from .config import Config
+            config_dir = Path(Config().app_dir)
             config_dir.mkdir(exist_ok=True)
             db_path = config_dir / "falconpy.db"
         

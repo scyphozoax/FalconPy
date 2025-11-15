@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QSplitter, QFrame, QProgressBar, QTextBrowser,
                              QMenu, QApplication, QGraphicsView, QGraphicsScene,
                              QGraphicsPixmapItem, QGraphicsTextItem, QStackedLayout,
-                             QMainWindow)
+                             QMainWindow, QFileDialog, QMessageBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QUrl, QThread, pyqtSlot, QPoint, QPointF
 from PyQt6.QtGui import QPixmap, QFont, QKeySequence, QShortcut, QCursor, QFontMetrics
 from PyQt6.QtGui import QTransform, QAction, QPainter, QColor
@@ -579,7 +579,7 @@ class ImageViewerDialog(QMainWindow):
     
     def setup_ui(self):
         """设置UI"""
-        self.setWindowTitle(self.i18n.t("图片查看器"))
+        self.setWindowTitle(self.i18n.t("查看详情"))
         self.setMinimumSize(1000, 700)
         self.resize(1280, 820)
         
@@ -668,9 +668,15 @@ class ImageViewerDialog(QMainWindow):
         toolbar_bottom_layout.addWidget(self.flip_h_btn)
         toolbar_bottom_layout.addWidget(self.flip_v_btn)
 
-        left_layout.addLayout(toolbar_top_layout)
-        left_layout.addLayout(toolbar_mid_layout)
-        left_layout.addLayout(toolbar_bottom_layout)
+        # 将三行工具栏放入一个容器，以便整体隐藏/显示
+        self.toolbar_container = QWidget()
+        toolbar_container_layout = QVBoxLayout(self.toolbar_container)
+        toolbar_container_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_container_layout.setSpacing(6)
+        toolbar_container_layout.addLayout(toolbar_top_layout)
+        toolbar_container_layout.addLayout(toolbar_mid_layout)
+        toolbar_container_layout.addLayout(toolbar_bottom_layout)
+        left_layout.addWidget(self.toolbar_container)
         # 根据文本自动调整按钮最小宽度，避免多语言下截断
         self._adjust_buttons_width([
             self.prev_btn, self.next_btn, self.fullscreen_btn,
@@ -702,6 +708,8 @@ class ImageViewerDialog(QMainWindow):
         self.video_widget = QVideoWidget()
         video_container_layout.addWidget(self.video_widget)
         video_container_layout.addWidget(self.video_controls)
+        video_container_layout.setStretch(0, 1)
+        video_container_layout.setStretch(1, 0)
         
         self.viewer_stack.addWidget(self.image_label)
         self.viewer_stack.addWidget(self.video_container)
@@ -767,7 +775,7 @@ class ImageViewerDialog(QMainWindow):
         info_layout = QVBoxLayout(info_frame)
         
         # 标题
-        title_label = QLabel(self.i18n.t("图片信息"))
+        title_label = QLabel(self.i18n.t("元数据"))
         title_label.setFont(QFont("", 12, QFont.Weight.Bold))
         info_layout.addWidget(title_label)
         
@@ -878,8 +886,10 @@ class ImageViewerDialog(QMainWindow):
         self.favorite_btn = QPushButton(self.i18n.t("♡ 添加收藏"))
         self.favorite_btn.clicked.connect(self.toggle_favorite)
         
-        self.download_btn = QPushButton(self.i18n.t("下载原图"))
+        self.download_btn = QPushButton(self.i18n.t("保存图片"))
         self.download_btn.clicked.connect(self.download_image)
+        self.save_video_btn = QPushButton(self.i18n.t("保存视频"))
+        self.save_video_btn.clicked.connect(lambda: self.download_image())
 
         self.open_source_btn = QPushButton(self.i18n.t("打开原页面"))
         self.open_source_btn.clicked.connect(self.open_source_page)
@@ -901,6 +911,7 @@ class ImageViewerDialog(QMainWindow):
         
         button_layout.addWidget(self.favorite_btn)
         button_layout.addWidget(self.download_btn)
+        button_layout.addWidget(self.save_video_btn)
         button_layout.addWidget(self.open_source_btn)
         button_layout.addWidget(self.copy_post_btn)
         button_layout.addWidget(self.copy_image_btn)
@@ -917,6 +928,10 @@ class ImageViewerDialog(QMainWindow):
         splitter.setSizes([800, 300])
         
         main_layout.addWidget(splitter)
+        try:
+            self._update_action_buttons()
+        except Exception:
+            pass
     
     def create_menu_bar(self):
         """创建菜单栏"""
@@ -1187,7 +1202,11 @@ class ImageViewerDialog(QMainWindow):
                 pass
             self.media_player = None
         
-        # 隐藏视频控制组件
+        # 显示图片工具栏，隐藏视频控制组件
+        try:
+            self.toolbar_container.show()
+        except Exception:
+            pass
         self.video_controls.hide()
         
         # 切换到图片视图
@@ -1212,6 +1231,10 @@ class ImageViewerDialog(QMainWindow):
         self.download_thread.download_failed.connect(self.on_download_failed)
         self.download_thread.download_progress.connect(self.on_download_progress)
         self.download_thread.start()
+        try:
+            self._update_action_buttons()
+        except Exception:
+            pass
 
 
     @pyqtSlot(dict)
@@ -1233,6 +1256,10 @@ class ImageViewerDialog(QMainWindow):
         except Exception:
             pass
         self.load_image()
+        try:
+            self._update_action_buttons()
+        except Exception:
+            pass
 
     @pyqtSlot(str)
     def _on_moebooru_failed(self, error: str):
@@ -1283,9 +1310,13 @@ class ImageViewerDialog(QMainWindow):
                 pass
             self.media_player = None
 
-        # 切换到视频播放器
+        # 切换到视频播放器并隐藏图片工具栏
         try:
             self.viewer_stack.setCurrentWidget(self.video_container)
+        except Exception:
+            pass
+        try:
+            self.toolbar_container.hide()
         except Exception:
             pass
         
@@ -1305,6 +1336,10 @@ class ImageViewerDialog(QMainWindow):
         # 设置媒体源并播放
         self.media_player.setSource(QUrl(video_url))
         self.media_player.play()
+        try:
+            self._update_action_buttons()
+        except Exception:
+            pass
     
     def setup_video_controls(self):
         """设置视频控制组件的信号连接"""
@@ -1378,6 +1413,10 @@ class ImageViewerDialog(QMainWindow):
                     if self.gif_player.is_animated():
                         self.gif_player.play()
                     
+                    try:
+                        self._update_action_buttons()
+                    except Exception:
+                        pass
                     return
                 else:
                     print("[GIF] GIF加载失败，回退到静态图片处理")
@@ -1396,6 +1435,10 @@ class ImageViewerDialog(QMainWindow):
             self.image_label.set_pixmap(pixmap)
             self.fit_to_window()
             self.sync_zoom_ui()
+            try:
+                self._update_action_buttons()
+            except Exception:
+                pass
         else:
             self.image_label.setText(self.i18n.t("无法解析图片数据"))
     
@@ -1486,8 +1529,110 @@ class ImageViewerDialog(QMainWindow):
         self.favorite_toggled.emit(self.image_data, self.is_favorite)
     
     def download_image(self):
-        """下载图片"""
-        self.download_requested.emit(self.image_data)
+        try:
+            is_video = (self.viewer_stack.currentWidget() == self.video_container) or ((self.image_data.get('file_ext') or '').lower() in ['mp4', 'webm'])
+            if is_video:
+                url = self.image_data.get('file_url') or self.image_data.get('large_file_url') or self.image_data.get('preview_url')
+                if url:
+                    import webbrowser
+                    webbrowser.open(url)
+                    return
+                QMessageBox.information(self, self.i18n.t("提示"), self.i18n.t("无法获取视频URL"))
+                return
+            is_image_view = (self.viewer_stack.currentWidget() == self.image_label)
+            pixmap = None
+            if is_image_view:
+                try:
+                    pm = getattr(self.image_label, 'pixmap_item', None)
+                    pixmap = pm.pixmap() if pm else None
+                except Exception:
+                    pixmap = None
+                if (not pixmap) or pixmap.isNull():
+                    pixmap = getattr(self.image_label, 'original_pixmap', None)
+            if not pixmap or pixmap.isNull():
+                QMessageBox.information(self, self.i18n.t("提示"), self.i18n.t("当前无可保存的已加载图片"))
+                return
+            try:
+                cfg = Config()
+                base_path = cfg.get('download.path', './downloads')
+                base_dir = os.path.expanduser(base_path)
+                if not os.path.isabs(base_dir):
+                    base_dir = os.path.join(str(cfg.app_dir), base_dir)
+                site = (self.image_data.get('site') or 'unknown').lower()
+                post_id = str(self.image_data.get('id') or '')
+                ext = (self.image_data.get('file_ext') or '').lower()
+                if ext not in ('jpg', 'jpeg', 'png', 'webp'):
+                    ext = 'png'
+                filename = f"{site}_{post_id}.{ext}" if post_id else f"{site}.{ext}"
+                default_path = os.path.join(base_dir, filename)
+            except Exception:
+                default_path = os.path.expanduser('~/saved_image.png')
+                ext = 'png'
+            filters = "图片文件 (*.png *.jpg *.jpeg *.webp);;PNG (*.png);;JPEG (*.jpg *.jpeg);;WEBP (*.webp)"
+            save_path, _ = QFileDialog.getSaveFileName(self, self.i18n.t("保存图片"), default_path, filters)
+            if not save_path:
+                return
+            try:
+                fmt = os.path.splitext(save_path)[1].lstrip('.').lower()
+                if fmt not in ('png', 'jpg', 'jpeg', 'webp'):
+                    fmt = ext if ext in ('png', 'jpg', 'jpeg', 'webp') else 'png'
+            except Exception:
+                fmt = 'png'
+            ok = False
+            try:
+                if fmt in ('jpg', 'jpeg'):
+                    ok = pixmap.save(save_path, 'JPEG', quality=90)
+                elif fmt == 'webp':
+                    ok = pixmap.save(save_path, 'WEBP')
+                else:
+                    ok = pixmap.save(save_path, 'PNG')
+            except Exception:
+                ok = False
+            if ok:
+                QMessageBox.information(self, self.i18n.t("完成"), self.i18n.t("已保存到:\n{path}").format(path=save_path))
+            else:
+                QMessageBox.warning(self, self.i18n.t("保存失败"), self.i18n.t("无法写入文件: {path}").format(path=save_path))
+        except Exception as e:
+            try:
+                QMessageBox.warning(self, self.i18n.t("保存失败"), self.i18n.t("错误: {msg}").format(msg=str(e)))
+            except Exception:
+                pass
+
+    def _update_action_buttons(self):
+        try:
+            ext = (self.image_data.get('file_ext') or '').lower()
+        except Exception:
+            ext = ''
+        is_video = ext in ['mp4', 'webm'] or (self.viewer_stack.currentWidget() == self.video_container)
+        is_gif = ext == 'gif'
+        if is_gif:
+            try:
+                self.download_btn.hide()
+            except Exception:
+                pass
+            try:
+                self.save_video_btn.hide()
+            except Exception:
+                pass
+            return
+        if is_video:
+            try:
+                self.download_btn.hide()
+            except Exception:
+                pass
+            try:
+                self.save_video_btn.show()
+            except Exception:
+                pass
+        else:
+            try:
+                self.download_btn.show()
+            except Exception:
+                pass
+            try:
+                self.save_video_btn.hide()
+            except Exception:
+                pass
     
     def open_source_page(self):
         """打开原页面"""
@@ -1506,7 +1651,7 @@ class ImageViewerDialog(QMainWindow):
         self.current_index = index
         self.image_data = self.images_list[self.current_index]
         # 更新窗口标题
-        self.setWindowTitle(self.i18n.t("图片查看器"))
+        self.setWindowTitle(self.i18n.t("查看详情"))
         # 每次切换重置缩放与旋转以避免形变叠加
         self.image_label.reset_zoom()
         self.image_label.rotation_degrees = 0
@@ -1673,8 +1818,11 @@ class ImageViewerDialog(QMainWindow):
         """切换原图/大图并重新加载"""
         self.use_original = not self.use_original
         self.toggle_original_btn.setText(self.i18n.t("切换为原图") if not self.use_original else self.i18n.t("切换为大图"))
-        # 重载图片
         self.load_static_image()
+        try:
+            self._update_action_buttons()
+        except Exception:
+            pass
     
     def mouseDoubleClickEvent(self, event):
         """双击事件：切换全屏"""

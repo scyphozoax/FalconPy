@@ -59,7 +59,8 @@ class VideoControls(QWidget):
     def setup_ui(self):
         """设置UI"""
         from PyQt6.QtWidgets import QSizePolicy
-        self.setMinimumHeight(80)
+        self.setFixedHeight(72)
+        self.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed))
         self.setStyleSheet("""
             QWidget {
                 background-color: rgba(0, 0, 0, 180);
@@ -104,8 +105,8 @@ class VideoControls(QWidget):
         """)
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(10, 5, 10, 5)
-        main_layout.setSpacing(5)
+        main_layout.setContentsMargins(8, 6, 8, 6)
+        main_layout.setSpacing(4)
         
         # 进度条和时间显示
         progress_layout = QHBoxLayout()
@@ -118,6 +119,7 @@ class VideoControls(QWidget):
         self.progress_slider.setMinimum(0)
         self.progress_slider.setMaximum(1000)
         self.progress_slider.setValue(0)
+        self.progress_slider.setMaximumHeight(20)
         progress_layout.addWidget(self.progress_slider)
         
         self.total_time_label = QLabel("00:00")
@@ -168,9 +170,14 @@ class VideoControls(QWidget):
         self.volume_slider.setMinimum(0)
         self.volume_slider.setMaximum(100)
         self.volume_slider.setValue(100)
-        self.volume_slider.setMinimumWidth(80)
+        self.volume_slider.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed))
+        self.volume_slider.setFixedWidth(90)
         self.volume_slider.setToolTip(self.i18n.t("音量控制"))
         controls_layout.addWidget(self.volume_slider)
+        
+        self.volume_label = QLabel("100%")
+        self.volume_label.setMinimumWidth(40)
+        controls_layout.addWidget(self.volume_label)
         
         # 全屏按钮
         self.fullscreen_btn = QPushButton("")
@@ -180,6 +187,7 @@ class VideoControls(QWidget):
         controls_layout.addWidget(self.fullscreen_btn)
         
         main_layout.addLayout(controls_layout)
+        self._apply_icons()
     
     def setup_connections(self):
         """设置信号连接"""
@@ -233,24 +241,16 @@ class VideoControls(QWidget):
         volume = value / 100.0
         self.volume = volume
         self.volume_changed.emit(volume)
-        
-        # 更新静音按钮
-        if volume == 0:
-            self.mute_btn.setText("🔇")
-            self.is_muted = True
-        else:
-            self.mute_btn.setText("🔊")
-            self.is_muted = False
+        self.is_muted = (volume == 0)
+        self._set_mute_icon()
+        self._update_volume_label()
     
     def _toggle_mute(self):
         """切换静音"""
         self.is_muted = not self.is_muted
         self.mute_toggled.emit(self.is_muted)
-        
-        if self.is_muted:
-            self.mute_btn.setText("🔇")
-        else:
-            self.mute_btn.setText("🔊")
+        self._set_mute_icon()
+        self._update_volume_label()
     
     def _update_display(self):
         """更新显示"""
@@ -306,11 +306,15 @@ class VideoControls(QWidget):
         """更新播放状态"""
         if state == QMediaPlayer.PlaybackState.PlayingState:
             self.is_playing = True
+            size = self._compute_icon_size()
             self.play_pause_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+            self.play_pause_btn.setIconSize(size)
             self.play_pause_btn.setToolTip(self.i18n.t("暂停 (空格)"))
         else:
             self.is_playing = False
+            size = self._compute_icon_size()
             self.play_pause_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+            self.play_pause_btn.setIconSize(size)
             self.play_pause_btn.setToolTip(self.i18n.t("播放 (空格)"))
             
         # 停止状态时停止更新定时器
@@ -324,14 +328,13 @@ class VideoControls(QWidget):
         """设置音量 (0.0-1.0)"""
         self.volume = volume
         self.volume_slider.setValue(int(volume * 100))
+        self._update_volume_label()
     
     def set_muted(self, muted):
         """设置静音状态"""
         self.is_muted = muted
-        if muted:
-            self.mute_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolumeMuted))
-        else:
-            self.mute_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume))
+        self._set_mute_icon()
+        self._update_volume_label()
     
     def reset(self):
         """重置控制器状态"""
@@ -342,8 +345,47 @@ class VideoControls(QWidget):
         self.progress_slider.setValue(0)
         self.current_time_label.setText("00:00")
         self.total_time_label.setText("00:00")
-        self.play_pause_btn.setText("▶")
-        self.play_pause_btn.setToolTip("播放 (空格)")
+        self._apply_icons()
+        self._update_volume_label()
+
+    def _compute_icon_size(self):
+        try:
+            from ...core.config import Config
+            cfg = Config()
+            scale = int(cfg.get('appearance.scale', 100) or 100)
+            base = int(cfg.get('appearance.scale_base', 70) or 70)
+            eff = max(60, min(150, int(round(base * scale / 100.0))))
+            icon_px = max(14, min(24, int(round(16 * eff / 100.0))))
+        except Exception:
+            icon_px = 16
+        return QSize(icon_px, icon_px)
+
+    def _apply_icons(self):
+        size = self._compute_icon_size()
+        self.play_pause_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.play_pause_btn.setIconSize(size)
+        self.stop_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+        self.stop_btn.setIconSize(size)
+        self.rewind_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekBackward))
+        self.rewind_btn.setIconSize(size)
+        self.forward_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaSeekForward))
+        self.forward_btn.setIconSize(size)
+        self.fullscreen_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_TitleBarMaxButton))
+        self.fullscreen_btn.setIconSize(size)
+        self._set_mute_icon()
+        self._update_volume_label()
+
+    def _set_mute_icon(self):
+        size = self._compute_icon_size()
+        if self.is_muted:
+            self.mute_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolumeMuted))
+        else:
+            self.mute_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume))
+        self.mute_btn.setIconSize(size)
+
+    def _update_volume_label(self):
+        eff = 0.0 if self.is_muted else max(0.0, min(1.0, self.volume))
+        self.volume_label.setText(f"{int(eff * 100)}%")
 
     def toggle_play_pause(self):
         """切换播放/暂停状态"""
