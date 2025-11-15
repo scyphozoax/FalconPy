@@ -5,13 +5,13 @@
 #define MyAppName "FalconPy"
 #define MyAppVersion "0.2.0"
 #define MyAppPublisher "Studio ScyphozoaX | Rabbit Hole"
-#define MyAppURL "https://www.scyphozoax.cn"
-#define MyAppExeName "FalconPy_windows_0.2.0_installer.exe"
+#define MyAppURL "https://scyphozoax.cn"
+#define MyAppExeName "FalconPy.exe"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
 ; (To generate a new GUID, click Tools | Generate GUID inside the IDE.)
-AppId={{C324CD50-793D-4D41-8CBA-E01537452404}
+AppId={{7AE4B464-E347-477E-A94E-C8701DE1A1B4}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 ;AppVerName={#MyAppName} {#MyAppVersion}
@@ -36,20 +36,20 @@ InfoBeforeFile=D:\0\before.rtf
 ;PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=D:\0
-OutputBaseFilename=falconpy_0.1.0_windows_64
+OutputBaseFilename=mysetup
 SetupIconFile=D:\0\falconpy\assets\falcon.ico
 SolidCompression=yes
-WizardStyle=classic slate
+WizardStyle=classic windows11
 
 [Languages]
-Name: "chinese"; MessagesFile: "compiler:Default.isl"
+Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "D:\Inno Setup 6\Examples\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "D:\0\falconpy\dist\FalconPy.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "D:\0\license.txt"; DestDir: "{app}"; Flags: ignoreversion
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
