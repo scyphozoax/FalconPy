@@ -37,7 +37,9 @@ class Config:
                 "show_thumbnails": True,
                 "show_image_info": True,
                 "animate_transitions": True,
-                "language": "zh_CN"
+                "language": "zh_CN",
+                "e_rating_filter": "hide",
+                "e_rating_blur_radius": 25
             },
             "network": {
                 "use_proxy": False,

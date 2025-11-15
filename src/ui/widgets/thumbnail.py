@@ -7,7 +7,7 @@
 from enum import Enum
 from typing import Optional, Dict, Any, Tuple
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QPushButton, QFrame, QSizePolicy, QGraphicsDropShadowEffect)
+                             QPushButton, QFrame, QSizePolicy, QGraphicsDropShadowEffect, QGraphicsBlurEffect)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize, QTimer, QPropertyAnimation, QEasingCurve, QRect
 from PyQt6.QtGui import QPixmap, QFont, QCursor, QMouseEvent, QColor
 
@@ -247,7 +247,9 @@ class ImageThumbnail(QFrame):
     def __init__(self, image_data: Dict[str, Any], 
                  thumbnail_size: Tuple[int, int] = (200, 200),
                  image_loader=None, event_manager=None,
-                 transform_mode_getter=None):
+                 transform_mode_getter=None,
+                 blur_if_e: bool = False,
+                 blur_radius: int = 6):
         super().__init__()
         
         # 基础属性
@@ -256,6 +258,11 @@ class ImageThumbnail(QFrame):
         self._image_loader = image_loader
         self._event_manager = event_manager
         self._transform_mode_getter = transform_mode_getter
+        self._blur_if_e = bool(blur_if_e)
+        try:
+            self._blur_radius = max(0, int(blur_radius))
+        except Exception:
+            self._blur_radius = 6
         
         # 状态属性
         self._state = ThumbnailState.PLACEHOLDER
@@ -402,6 +409,10 @@ class ImageThumbnail(QFrame):
                     if self._image_label:
                         self._image_label.setPixmap(scaled_pm)
                         self._image_label.setStyleSheet(ThumbnailStyle.get_image_label_style())
+                        try:
+                            self._apply_content_blur_if_needed()
+                        except Exception:
+                            pass
                     self._set_state(ThumbnailState.LOADED)
                     return
         except Exception:
@@ -540,6 +551,10 @@ class ImageThumbnail(QFrame):
             self._image_label.setPixmap(scaled_pixmap)
             # 恢复正常的图片标签样式
             self._image_label.setStyleSheet(ThumbnailStyle.get_image_label_style())
+            try:
+                self._apply_content_blur_if_needed()
+            except Exception:
+                pass
             # 不再定位/显示ID叠层
 
         # 将缩略图按ID保存到隐藏目录，避免刷新后无法加载
@@ -553,6 +568,28 @@ class ImageThumbnail(QFrame):
             pass
         
         self._set_state(ThumbnailState.LOADED)
+
+    def _apply_content_blur_if_needed(self):
+        try:
+            if not self._image_label:
+                return
+            r = str(self._image_data.get('rating', '')).lower()
+            if self._blur_if_e and r == 'e' and self._blur_radius > 0:
+                eff = QGraphicsBlurEffect()
+                eff.setBlurRadius(self._blur_radius)
+                self._image_label.setGraphicsEffect(eff)
+            else:
+                self._image_label.setGraphicsEffect(None)
+        except Exception:
+            pass
+
+    def update_blur_policy(self, blur_if_e: bool, blur_radius: int):
+        try:
+            self._blur_if_e = bool(blur_if_e)
+            self._blur_radius = max(0, int(blur_radius))
+            self._apply_content_blur_if_needed()
+        except Exception:
+            pass
     
     def on_image_failed(self, url: str, error: str):
         """处理图片加载失败"""

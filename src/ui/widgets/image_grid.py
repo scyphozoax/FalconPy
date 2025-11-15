@@ -70,6 +70,11 @@ class ImageGridWidget(QWidget):
             cache_manager = CacheManager(str(cache_dir), max_size_mb=int(max_disk_mb), max_memory_cache_mb=int(max_mem_mb))
         
         self.cache_manager = cache_manager
+        try:
+            from ...core.config import Config as _Cfg
+            self._cfg = _Cfg()
+        except Exception:
+            self._cfg = None
         
         # 选择加载器类型
         if use_advanced_cache:
@@ -213,7 +218,18 @@ class ImageGridWidget(QWidget):
     
     def set_images(self, images: list, page: int = 1, total_pages: int = 1):
         """设置图片列表"""
-        self.images = images
+        mode = 'off'
+        try:
+            mode = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
+        except Exception:
+            mode = 'off'
+        if mode == 'hide':
+            try:
+                self.images = [img for img in images if str(img.get('rating', '')).lower() != 'e']
+            except Exception:
+                self.images = images
+        else:
+            self.images = images
         self.current_page = page
         self.total_pages = total_pages
         
@@ -376,12 +392,24 @@ class ImageGridWidget(QWidget):
             row = i // self.columns
             col = i % self.columns
             
+            blur_flag = False
+            try:
+                m = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
+                blur_flag = (m == 'blur') and (str(image_data.get('rating', '')).lower() == 'e')
+            except Exception:
+                blur_flag = False
+            try:
+                blur_radius = int(self._cfg.get('appearance.e_rating_blur_radius', 12)) if self._cfg else 12
+            except Exception:
+                blur_radius = 12
             thumbnail = ImageThumbnail(
                 image_data=image_data, 
                 thumbnail_size=self.thumbnail_size, 
                 image_loader=self.image_loader,
                 event_manager=self.event_manager,
-                transform_mode_getter=self.get_transform_mode
+                transform_mode_getter=self.get_transform_mode,
+                blur_if_e=blur_flag,
+                blur_radius=blur_radius
             )
             
             # 连接信号（如果没有使用事件管理器）
@@ -413,17 +441,41 @@ class ImageGridWidget(QWidget):
             if w:
                 if w.image_data is not img:
                     w.update_image_data(img)
+                try:
+                    m = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
+                except Exception:
+                    m = 'off'
+                try:
+                    radius = int(self._cfg.get('appearance.e_rating_blur_radius', 25)) if self._cfg else 25
+                except Exception:
+                    radius = 25
+                try:
+                    w.update_blur_policy((m == 'blur') and (str(img.get('rating', '')).lower() == 'e'), radius)
+                except Exception:
+                    pass
                 new_widgets.append(w)
                 used_keys.add(k)
             else:
                 row = len(new_widgets) // self.columns
                 col = len(new_widgets) % self.columns
+                m = 'off'
+                try:
+                    m = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
+                except Exception:
+                    m = 'off'
+                blur_flag = (m == 'blur') and (str(img.get('rating', '')).lower() == 'e')
+                try:
+                    blur_radius = int(self._cfg.get('appearance.e_rating_blur_radius', 12)) if self._cfg else 12
+                except Exception:
+                    blur_radius = 12
                 w = ImageThumbnail(
                     image_data=img,
                     thumbnail_size=self.thumbnail_size,
                     image_loader=self.image_loader,
                     event_manager=self.event_manager,
-                    transform_mode_getter=self.get_transform_mode
+                    transform_mode_getter=self.get_transform_mode,
+                    blur_if_e=blur_flag,
+                    blur_radius=blur_radius
                 )
                 if not self.event_manager:
                     w.clicked.connect(self.image_selected.emit)

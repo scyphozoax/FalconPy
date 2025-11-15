@@ -415,6 +415,42 @@ class SettingsDialog(QDialog):
         self.scale_spin.setSuffix(" %")
         ui_form.addRow(self.i18n.t("默认缩放"), self.scale_spin)
         self._content_layout.addWidget(ui_group)
+        cf_group = QGroupBox(self.i18n.t("内容过滤"))
+        cf_form = QFormLayout(cf_group)
+        cf_form.setContentsMargins(12, 10, 12, 10)
+        cf_form.setVerticalSpacing(10)
+        cf_form.setHorizontalSpacing(12)
+        self.cf_btn_group = QButtonGroup()
+        self.cf_off = QRadioButton(self.i18n.t("关闭"))
+        self.cf_hide = QRadioButton(self.i18n.t("隐藏E评级图片"))
+        self.cf_blur = QRadioButton(self.i18n.t("模糊E评级缩略图"))
+        self.cf_btn_group.addButton(self.cf_off, 0)
+        self.cf_btn_group.addButton(self.cf_hide, 1)
+        self.cf_btn_group.addButton(self.cf_blur, 2)
+        mode = str(self.config.get('appearance.e_rating_filter', 'off') or 'off')
+        if mode == 'hide':
+            self.cf_hide.setChecked(True)
+        elif mode == 'blur':
+            self.cf_blur.setChecked(True)
+        else:
+            self.cf_off.setChecked(True)
+        cf_form.addRow(self.cf_off)
+        cf_form.addRow(self.cf_hide)
+        cf_form.addRow(self.cf_blur)
+        self._content_layout.addWidget(cf_group)
+        try:
+            self._cf_warn_ready = False
+            def _on_off():
+                if getattr(self, '_cf_warn_ready', False) and self.cf_off.isChecked():
+                    QMessageBox.warning(self, self.i18n.t("成人内容警告"), self.i18n.t("关闭过滤将显示成人内容（E评级图片），可能不适合公开环境。"))
+            def _on_blur():
+                if getattr(self, '_cf_warn_ready', False) and self.cf_blur.isChecked():
+                    QMessageBox.warning(self, self.i18n.t("成人内容警告"), self.i18n.t("将显示成人内容的缩略图（模糊处理）。注意：某些图片可能评级设置不正确导致无法使用模糊，请注意。"))
+            self.cf_off.toggled.connect(lambda checked: (_on_off() if checked else None))
+            self.cf_blur.toggled.connect(lambda checked: (_on_blur() if checked else None))
+            self._cf_warn_ready = True
+        except Exception:
+            pass
         
         self.download_tab = DownloadTab(self.config, self.i18n)
         self._content_layout.addWidget(self.download_tab)
@@ -475,6 +511,15 @@ class SettingsDialog(QDialog):
         self.download_tab.save_settings()
         self.update_tab.save_settings()
         self.favorites_tab.save_settings()
+        try:
+            m = 'off'
+            if self.cf_hide.isChecked():
+                m = 'hide'
+            elif self.cf_blur.isChecked():
+                m = 'blur'
+            self.config.set('appearance.e_rating_filter', m)
+        except Exception:
+            pass
         self.config.save_config()
         self.settings_changed.emit()
         QMessageBox.information(self, self.i18n.t("设置"), self.i18n.t("设置已保存并已应用。部分设置需要重启应用程序后生效。"))
@@ -497,6 +542,10 @@ class SettingsDialog(QDialog):
             self.scale_spin.setValue(70)
         except Exception:
             self.scale_spin.setValue(70)
+        try:
+            self.config.set('appearance.e_rating_filter', 'hide')
+        except Exception:
+            pass
         parent = self.download_tab.parent()
         self._content_layout.removeWidget(self.download_tab)
         self.download_tab.deleteLater()
