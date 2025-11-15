@@ -64,7 +64,7 @@ class ImageGridWidget(QWidget):
         if cache_manager is None:
             from ...core.config import Config
             config = Config()
-            cache_dir = config.app_dir / "cache" / "images"
+            cache_dir = config.cache_dir
             max_disk_mb = config.get("cache.max_size", 1000)
             max_mem_mb = config.get("cache.max_memory", 200)
             cache_manager = CacheManager(str(cache_dir), max_size_mb=int(max_disk_mb), max_memory_cache_mb=int(max_mem_mb))
