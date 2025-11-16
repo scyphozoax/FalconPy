@@ -103,7 +103,7 @@ FalconPy 提供了丰富的快捷键支持，提高使用效率：
 ## 🔧 配置说明
 
 ### 配置文件位置
-- Windows: `%APPDATA%/FalconPy/config.json`
+- Windows: `.\config.json`
 - 配置文件会自动创建，包含默认设置
 
 ### 主要配置项
