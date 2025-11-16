@@ -6,7 +6,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QToolBar, QStatusBar, QSplitter, QTabWidget,
                             QComboBox, QLineEdit, QPushButton, QScrollArea,
-                            QGridLayout, QLabel, QFrame, QMenuBar, QMenu, QMessageBox, QDialog, QApplication, QProgressDialog)
+                            QGridLayout, QLabel, QFrame, QMenuBar, QMenu, QMessageBox, QDialog, QApplication, QProgressDialog, QFileDialog)
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QTimer
 from PyQt6.QtGui import QAction, QIcon, QFont, QPalette, QColor, QFontDatabase
 import os
@@ -131,11 +131,13 @@ class MainWindow(QMainWindow):
         # 导入收藏夹
         import_action = QAction(self.i18n.t('导入收藏夹...'), self)
         import_action.setShortcut('Ctrl+I')
+        import_action.triggered.connect(self.import_favorites)
         file_menu.addAction(import_action)
         
         # 导出收藏夹
         export_action = QAction(self.i18n.t('导出收藏夹...'), self)
         export_action.setShortcut('Ctrl+E')
+        export_action.triggered.connect(self.export_favorites)
         file_menu.addAction(export_action)
         
         file_menu.addSeparator()
@@ -229,6 +231,51 @@ class MainWindow(QMainWindow):
                 self.status_bar.showMessage(self.i18n.t("打开配置文件失败: {msg}").format(msg=str(e)), 3000)
             except Exception:
                 pass
+
+    def export_favorites(self):
+        try:
+            data = self.db_manager.export_favorites_data()
+            default_dir = Path(self.config.favorites_dir)
+            default_dir.mkdir(parents=True, exist_ok=True)
+            from datetime import datetime
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            default_name = f'favorites_export_{ts}.json'
+            default_path = str(default_dir / default_name)
+            path, _ = QFileDialog.getSaveFileName(self, self.i18n.t('导出收藏夹'), default_path, 'JSON (*.json)')
+            if not path:
+                return
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.status_bar.showMessage(self.i18n.t('收藏夹已导出: {file}').format(file=path), 4000)
+        except Exception as e:
+            QMessageBox.warning(self, self.i18n.t('错误'), self.i18n.t('导出失败: {msg}').format(msg=str(e)))
+
+    def import_favorites(self):
+        try:
+            path, _ = QFileDialog.getOpenFileName(self, self.i18n.t('导入收藏夹'), str(self.config.favorites_dir), 'JSON (*.json)')
+            if not path:
+                return
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            favs = []
+            if isinstance(data, dict) and 'favorites' in data and isinstance(data['favorites'], list):
+                favs = data['favorites']
+            elif isinstance(data, list):
+                favs = data
+            progress = QProgressDialog(self.i18n.t('正在导入收藏...'), self.i18n.t('取消'), 0, max(1, len(favs)), self)
+            progress.setWindowModality(Qt.WindowModality.ApplicationModal)
+            progress.show()
+            stats = self.db_manager.import_favorites_data(data)
+            progress.setValue(progress.maximum())
+            self.status_bar.showMessage(self.i18n.t('导入完成: 收藏夹 {fav}, 新建 {new}, 图片 {img}, 跳过 {skip}').format(
+                fav=stats.get('total_favorites', 0),
+                new=stats.get('created_favorites', 0),
+                img=stats.get('imported_images', 0),
+                skip=stats.get('skipped_duplicates', 0)
+            ), 5000)
+            self._refresh_favorites_if_active()
+        except Exception as e:
+            QMessageBox.warning(self, self.i18n.t('错误'), self.i18n.t('导入失败: {msg}').format(msg=str(e)))
 
     def apply_settings(self):
         theme = self.config.get('appearance.theme', 'win11')
@@ -857,6 +904,10 @@ class MainWindow(QMainWindow):
         # 连接图片网格信号
         self.image_grid.image_selected.connect(self.show_image_viewer)
         self.image_grid.favorite_added.connect(self.add_to_favorites)
+        try:
+            self.image_grid.favorite_removed.connect(self.remove_from_favorites)
+        except Exception:
+            pass
         self.image_grid.page_changed.connect(self.load_page)
         # 接入图片网格下载请求
         try:
@@ -1761,6 +1812,26 @@ class PerformancePanel(QDialog):
             self._refresh_favorites_if_active()
         except Exception as e:
             QMessageBox.warning(self, "错误", f"添加到收藏夹失败：{str(e)}")
+
+    def remove_from_favorites(self, image_data: dict):
+        try:
+            img_id = str(image_data.get('id'))
+            site = (image_data.get('site') or 'unknown').lower()
+            try:
+                cnt = self.db_manager.remove_image_global(img_id, site)
+                if cnt > 0:
+                    self.status_bar.showMessage("已从收藏夹移除", 2000)
+                else:
+                    fav_id = self._get_site_default_fav_id(site) or self._get_default_favorite_id()
+                    self.db_manager.remove_image_from_favorite(fav_id, img_id, site)
+                    self.status_bar.showMessage("已从收藏夹移除", 2000)
+            except Exception:
+                fav_id = self._get_site_default_fav_id(site) or self._get_default_favorite_id()
+                self.db_manager.remove_image_from_favorite(fav_id, img_id, site)
+                self.status_bar.showMessage("已从收藏夹移除", 2000)
+            self._refresh_favorites_if_active()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"移除收藏失败：{str(e)}")
     
     def on_favorite_toggled(self, image_data: dict, is_favorite: bool):
         """收藏状态切换：支持本地与在线，并按站点记住默认"""

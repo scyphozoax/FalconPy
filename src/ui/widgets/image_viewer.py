@@ -25,49 +25,65 @@ from ...core.i18n import I18n
 from ...core.config import Config
 
 class ImageDownloadThread(QThread):
+    """图片下载线程"""
+    
     download_finished = pyqtSignal(bytes)
     download_failed = pyqtSignal(str)
-    download_progress = pyqtSignal(int, int)
-
-    def __init__(self, url: str, headers: dict | None = None):
+    download_progress = pyqtSignal(int, int)  # current, total
+    
+    def __init__(self, url: str):
         super().__init__()
         self.url = url
-        self.headers = headers or {}
         self.session = None
-
+    
     def run(self):
+        """运行下载"""
         asyncio.run(self.download_image())
-
+    
     async def download_image(self):
+        """异步下载图片"""
         try:
+            timeout = aiohttp.ClientTimeout(total=60)
             cfg = Config()
-            timeout_seconds = int(cfg.get('network.timeout', 30) or 30)
-            timeout = aiohttp.ClientTimeout(total=timeout_seconds)
             proxy_url = None
-            if cfg.get('network.use_proxy', False):
-                host = cfg.get('network.proxy_host', '')
-                port = cfg.get('network.proxy_port', 0)
-                username = cfg.get('network.proxy_username', '')
-                password = cfg.get('network.proxy_password', '')
-                if host and port:
-                    proxy_url = f"http://{username}:{password}@{host}:{port}" if username and password else f"http://{host}:{port}"
-            base_headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
-            }
-            req_headers = {**base_headers, **self.headers}
-            async with aiohttp.ClientSession(timeout=timeout, trust_env=True, headers=req_headers) as session:
-                async with session.get(self.url, proxy=proxy_url) as response:
+            try:
+                if cfg.get('network.use_proxy', False):
+                    host = cfg.get('network.proxy_host', '')
+                    port = cfg.get('network.proxy_port', 0)
+                    username = cfg.get('network.proxy_username', '')
+                    password = cfg.get('network.proxy_password', '')
+                    if host and port:
+                        if username and password:
+                            proxy_url = f"http://{username}:{password}@{host}:{port}"
+                        else:
+                            proxy_url = f"http://{host}:{port}"
+            except Exception:
+                proxy_url = None
+            async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+                headers = None
+                try:
+                    from urllib.parse import urlparse
+                    netloc = (urlparse(self.url).netloc or '').lower()
+                    if 'yande.re' in netloc:
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                            'Referer': 'https://yande.re',
+                            'Accept': '*/*',
+                        }
+                except Exception:
+                    headers = None
+                async with session.get(self.url, headers=headers, proxy=proxy_url) as response:
                     if response.status == 200:
                         total_size = int(response.headers.get('content-length', 0))
                         downloaded = 0
                         data = b''
+                        
                         async for chunk in response.content.iter_chunked(8192):
-                            if not chunk:
-                                continue
                             data += chunk
                             downloaded += len(chunk)
                             if total_size > 0:
                                 self.download_progress.emit(downloaded, total_size)
+                        
                         self.download_finished.emit(data)
                     else:
                         self.download_failed.emit(f"HTTP错误: {response.status}")
@@ -103,9 +119,7 @@ class MoebooruResolveFileUrlThread(QThread):
             self.failed.emit(f"解析异常: {e}")
 
     async def _resolve(self):
-        cfg = Config()
-        timeout_seconds = int(cfg.get('network.timeout', 30) or 30)
-        timeout = aiohttp.ClientTimeout(total=timeout_seconds)
+        timeout = aiohttp.ClientTimeout(total=30)
         from urllib.parse import urlparse
         p = urlparse(self.post_url)
         base = 'https://konachan.net' if 'konachan.net' in (p.netloc or '') else 'https://yande.re'
@@ -115,15 +129,22 @@ class MoebooruResolveFileUrlThread(QThread):
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
             'Referer': base,
         }
+        cfg = Config()
         proxy_url = None
-        if cfg.get('network.use_proxy', False):
-            host = cfg.get('network.proxy_host', '')
-            port = cfg.get('network.proxy_port', 0)
-            username = cfg.get('network.proxy_username', '')
-            password = cfg.get('network.proxy_password', '')
-            if host and port:
-                proxy_url = f"http://{username}:{password}@{host}:{port}" if username and password else f"http://{host}:{port}"
-        async with aiohttp.ClientSession(timeout=timeout, trust_env=True, headers=headers) as session:
+        try:
+            if cfg.get('network.use_proxy', False):
+                host = cfg.get('network.proxy_host', '')
+                port = cfg.get('network.proxy_port', 0)
+                username = cfg.get('network.proxy_username', '')
+                password = cfg.get('network.proxy_password', '')
+                if host and port:
+                    if username and password:
+                        proxy_url = f"http://{username}:{password}@{host}:{port}"
+                    else:
+                        proxy_url = f"http://{host}:{port}"
+        except Exception:
+            proxy_url = None
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers, trust_env=True) as session:
             html = None
             try:
                 async with session.get(self.post_url, allow_redirects=True, proxy=proxy_url) as resp:
@@ -1247,15 +1268,7 @@ class ImageViewerDialog(QMainWindow):
         self.progress_bar.show()
         self.progress_bar.setRange(0, 0)  # 不确定进度
         
-        headers = {}
-        try:
-            site = (self.image_data.get('site') or '').lower()
-            post_url = self.image_data.get('post_url')
-            if site in ('yandere', 'konachan'):
-                headers['Referer'] = post_url or ('https://yande.re' if site == 'yandere' else 'https://konachan.net')
-        except Exception:
-            pass
-        self.download_thread = ImageDownloadThread(image_url, headers=headers)
+        self.download_thread = ImageDownloadThread(image_url)
         self.download_thread.download_finished.connect(self.on_image_downloaded)
         self.download_thread.download_failed.connect(self.on_download_failed)
         self.download_thread.download_progress.connect(self.on_download_progress)

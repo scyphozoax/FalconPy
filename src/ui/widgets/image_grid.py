@@ -19,6 +19,7 @@ class ImageGridWidget(QWidget):
     
     image_selected = pyqtSignal(dict)  # 图片选择信号
     favorite_added = pyqtSignal(dict)  # 收藏添加信号
+    favorite_removed = pyqtSignal(dict)  # 收藏移除信号
     page_changed = pyqtSignal(int)     # 页面变化信号
     download_requested = pyqtSignal(dict)  # 下载请求信号（交由主窗口处理）
     refresh_requested = pyqtSignal()   # 刷新请求（主窗口执行当前站点刷新）
@@ -320,7 +321,15 @@ class ImageGridWidget(QWidget):
             # 卡片菜单：以当前卡片为作用对象，不改变选择状态
             act_refresh = menu.addAction(self.i18n.t("刷新"))
             act_preview = menu.addAction(self.i18n.t("预览图片"))
-            act_fav = menu.addAction(self.i18n.t("添加到收藏"))
+            try:
+                from ...core.database import DatabaseManager
+                db = DatabaseManager()
+                img_id = str(img.get('id'))
+                site = (img.get('site') or 'unknown').lower()
+                is_fav = db.is_image_favorited(img_id, site)
+            except Exception:
+                is_fav = False
+            act_fav = menu.addAction(self.i18n.t("取消收藏") if is_fav else self.i18n.t("添加到收藏"))
             act_copy = menu.addAction(self.i18n.t("复制图片链接"))
             act_download = menu.addAction(self.i18n.t("下载图片"))
             act_open = menu.addAction(self.i18n.t("在浏览器打开"))
@@ -336,7 +345,10 @@ class ImageGridWidget(QWidget):
             elif action == act_preview:
                 self.image_selected.emit(img)
             elif action == act_fav:
-                self.favorite_added.emit(img)
+                if is_fav:
+                    self.favorite_removed.emit(img)
+                else:
+                    self.favorite_added.emit(img)
             elif action == act_copy:
                 self._copy_image_link(img)
             elif action == act_download:
@@ -415,7 +427,7 @@ class ImageGridWidget(QWidget):
             # 连接信号（如果没有使用事件管理器）
             if not self.event_manager:
                 thumbnail.clicked.connect(self.image_selected.emit)
-                thumbnail.favorite_clicked.connect(self.favorite_added.emit)
+                thumbnail.favorite_clicked.connect(lambda d=image_data: self._on_thumbnail_favorite_clicked(d))
                 thumbnail.selected.connect(self.on_thumbnail_selected)
             
             self.thumbnail_widgets.append(thumbnail)
@@ -578,7 +590,32 @@ class ImageGridWidget(QWidget):
         """处理缩略图收藏状态切换事件"""
         thumbnail = event_data.thumbnail_widget
         if hasattr(thumbnail, 'image_data'):
-            self.favorite_added.emit(thumbnail.image_data)
+            try:
+                from ...core.database import DatabaseManager
+                db = DatabaseManager()
+                img = thumbnail.image_data
+                img_id = str(img.get('id'))
+                site = (img.get('site') or 'unknown').lower()
+                is_fav = db.is_image_favorited(img_id, site)
+                if is_fav:
+                    self.favorite_removed.emit(img)
+                else:
+                    self.favorite_added.emit(img)
+            except Exception:
+                self.favorite_added.emit(thumbnail.image_data)
+
+    def _on_thumbnail_favorite_clicked(self, image_data: dict):
+        try:
+            from ...core.database import DatabaseManager
+            db = DatabaseManager()
+            img_id = str(image_data.get('id'))
+            site = (image_data.get('site') or 'unknown').lower()
+            if db.is_image_favorited(img_id, site):
+                self.favorite_removed.emit(image_data)
+            else:
+                self.favorite_added.emit(image_data)
+        except Exception:
+            self.favorite_added.emit(image_data)
     
     def update_minimum_width(self):
         """更新最小宽度以确保至少显示1列"""

@@ -105,6 +105,21 @@ class DatabaseManager:
                     'updated_at': row[4]
                 })
             return favorites
+
+    def get_favorite_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM favorites WHERE name = ?", (name,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                'id': row[0],
+                'name': row[1],
+                'description': row[2],
+                'created_at': row[3],
+                'updated_at': row[4]
+            }
     
     def delete_favorite(self, favorite_id: int):
         """删除收藏夹"""
@@ -137,6 +152,16 @@ class DatabaseManager:
                 (favorite_id, image_id, site)
             )
             conn.commit()
+
+    def remove_image_global(self, image_id: str, site: str) -> int:
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM favorite_images WHERE image_id = ? AND site = ?",
+                (image_id, site)
+            )
+            conn.commit()
+            return cursor.rowcount
     
     def get_favorite_images(self, favorite_id: int) -> List[Dict[str, Any]]:
         """获取收藏夹中的图片"""
@@ -159,6 +184,66 @@ class DatabaseManager:
                     'added_at': row[5]
                 })
             return images
+
+    def export_favorites_data(self) -> Dict[str, Any]:
+        favorites = self.get_favorites()
+        result = {
+            'format': 'falconpy_favorites',
+            'version': '1',
+            'favorites': []
+        }
+        for fav in favorites:
+            images = self.get_favorite_images(fav['id'])
+            result['favorites'].append({
+                'name': fav['name'],
+                'description': fav.get('description') or '',
+                'created_at': fav.get('created_at'),
+                'updated_at': fav.get('updated_at'),
+                'images': [
+                    {
+                        'image_id': it.get('image_id'),
+                        'site': it.get('site'),
+                        'image_data': it.get('image_data'),
+                        'added_at': it.get('added_at')
+                    } for it in images
+                ]
+            })
+        return result
+
+    def import_favorites_data(self, data: Dict[str, Any]) -> Dict[str, int]:
+        stats = {
+            'total_favorites': 0,
+            'created_favorites': 0,
+            'imported_images': 0,
+            'skipped_duplicates': 0
+        }
+        favorites = []
+        if isinstance(data, dict) and 'favorites' in data and isinstance(data['favorites'], list):
+            favorites = data['favorites']
+        elif isinstance(data, list):
+            favorites = data
+        else:
+            return stats
+        stats['total_favorites'] = len(favorites)
+        for fav in favorites:
+            name = (fav.get('name') or '').strip() or '导入的收藏夹'
+            existing = self.get_favorite_by_name(name)
+            if existing:
+                fav_id = existing['id']
+            else:
+                fav_id = self.create_favorite(name, fav.get('description') or '')
+                stats['created_favorites'] += 1
+            images = fav.get('images') or []
+            for it in images:
+                image_id = str(it.get('image_id'))
+                site = (it.get('site') or 'unknown').lower()
+                image_data = it.get('image_data') or {}
+                ok = self.add_image_to_favorite(fav_id, image_id, site, image_data)
+                if ok:
+                    stats['imported_images'] += 1
+                else:
+                    stats['skipped_duplicates'] += 1
+        return stats
     
     def is_image_favorited(self, image_id: str, site: str) -> bool:
         """检查图片是否已收藏"""
