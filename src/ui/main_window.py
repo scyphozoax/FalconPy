@@ -189,6 +189,382 @@ class MainWindow(QMainWindow):
         check_update_action.triggered.connect(self.check_for_updates)
         help_menu.addAction(check_update_action)
     
+    def show_account_management_dialog(self):
+        dialog = AccountManagementDialog(self)
+        try:
+            current_theme = self.theme_manager.get_current_theme()
+            self.theme_manager.apply_theme(current_theme, dialog)
+        except Exception:
+            pass
+        dialog.login_success.connect(self.on_login_success)
+        dialog.logout_requested.connect(self.logout_from_site)
+        dialog.exec()
+    
+    def show_settings_dialog(self):
+        dialog = SettingsDialog(self.config, self)
+        current_theme = self.theme_manager.get_current_theme()
+        self.theme_manager.apply_theme(current_theme, dialog)
+        try:
+            dialog.settings_changed.connect(self.apply_settings)
+        except Exception:
+            pass
+        if dialog.exec() == SettingsDialog.DialogCode.Accepted:
+            self.apply_settings()
+    
+    def open_config_file(self):
+        from PyQt6.QtGui import QDesktopServices
+        from PyQt6.QtCore import QUrl
+        try:
+            path = Path(self.config.config_file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                self.config.save_config()
+            if os.name == 'nt':
+                os.startfile(str(path))
+            else:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+            self.status_bar.showMessage(self.i18n.t("已打开配置文件: {file}").format(file=str(path)), 3000)
+        except Exception as e:
+            try:
+                self.status_bar.showMessage(self.i18n.t("打开配置文件失败: {msg}").format(msg=str(e)), 3000)
+            except Exception:
+                pass
+
+    def apply_settings(self):
+        theme = self.config.get('appearance.theme', 'win11')
+        self.apply_theme(theme)
+        font_str = self.config.get('appearance.font', '')
+        scale = int(self.config.get('appearance.scale', 100) or 100)
+        scale_base = int(self.config.get('appearance.scale_base', 70) or 70)
+        eff_scale = max(60, min(150, int(round(scale_base * scale / 100.0))))
+        if font_str:
+            try:
+                base_family, base_size_str = font_str.split(',')[0], font_str.split(',')[1]
+                base_size = max(8, int(base_size_str))
+                scaled_size = max(8, int(round(base_size * (eff_scale / 100.0))))
+                app_font = QFont(base_family, scaled_size)
+                try:
+                    app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+                except Exception:
+                    pass
+                try:
+                    QApplication.instance().setFont(app_font)
+                except Exception:
+                    self.setFont(app_font)
+            except Exception:
+                pass
+        try:
+            lang = self.config.get('appearance.language', 'zh_CN')
+            self.i18n.set_language(lang)
+            self.menuBar().clear()
+            self.create_menu_bar()
+        except Exception:
+            pass
+        self.update()
+        try:
+            self.status_bar.showMessage(self.i18n.t("设置已应用"))
+        except Exception:
+            self.status_bar.showMessage("设置已应用")
+
+    def apply_theme(self, theme: str):
+        self.theme_manager.apply_theme(theme, self)
+
+    def check_existing_sessions(self):
+        active_sessions = self.session_manager.get_all_active_sessions()
+        if active_sessions:
+            session = list(active_sessions.values())[0]
+            site = session['site']
+            user_info = session['user_info']
+            self.update_ui_for_login_state(site, user_info)
+
+    def _on_fav_source_changed(self, idx: int):
+        try:
+            text = self.fav_source_box.currentText().strip()
+            if text.startswith('本地'):
+                self.fav_source = 'local'
+            elif text.startswith('在线'):
+                self.fav_source = 'online'
+            else:
+                self.fav_source = 'merge'
+            self._cancel_online_fav_thread()
+            self._load_favorites_into_tabs()
+        except Exception:
+            pass
+
+    def _on_tab_changed(self, index: int):
+        try:
+            tab_text = self.tab_widget.tabText(index)
+            if tab_text == '收藏夹' or tab_text == self.i18n.t('收藏夹'):
+                self._load_favorites_into_tabs()
+        except Exception:
+            pass
+
+    def _refresh_favorites_if_active(self):
+        try:
+            current_index = self.tab_widget.currentIndex()
+            if self.tab_widget.tabText(current_index) == '收藏夹' or self.tab_widget.tabText(current_index) == self.i18n.t('收藏夹'):
+                self._load_favorites_into_tabs()
+        except Exception:
+            pass
+
+    def show_image_viewer_from_grid(self, grid_widget: ImageGridWidget, image_data: dict):
+        from .widgets.image_viewer import ImageViewerDialog
+        images = []
+        try:
+            images = list(getattr(grid_widget, 'current_images', []) or [])
+        except Exception:
+            images = []
+        cur_idx = 0
+        try:
+            cur_id = image_data.get('id')
+            cur_site = image_data.get('site')
+            cur_idx = next((i for i, it in enumerate(images)
+                            if it.get('id') == cur_id and it.get('site') == cur_site), 0)
+        except Exception:
+            cur_idx = 0
+        viewer = ImageViewerDialog(image_data, None, images_list=images, current_index=cur_idx)
+        viewer.favorite_toggled.connect(self.on_favorite_toggled)
+        viewer.download_requested.connect(self.download_image)
+        viewer.tag_clicked.connect(self.on_viewer_tag_clicked)
+        viewer.show()
+        if not hasattr(self, 'image_viewers'):
+            self.image_viewers = []
+        self.image_viewers.append(viewer)
+        try:
+            viewer.destroyed.connect(self._on_viewer_destroyed)
+        except Exception:
+            pass
+
+    def add_to_favorites(self, image_data: dict):
+        try:
+            favorite_id = self._get_default_favorite_id()
+            img_id = str(image_data.get('id'))
+            site = (image_data.get('site') or 'unknown').lower()
+            success = self.db_manager.add_image_to_favorite(favorite_id, img_id, site, image_data)
+            if success:
+                self.status_bar.showMessage("已添加到收藏夹：默认收藏夹", 2000)
+            else:
+                self.status_bar.showMessage("该图片已在收藏夹中", 2000)
+            self._refresh_favorites_if_active()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"添加到收藏夹失败：{str(e)}")
+
+    def on_favorite_toggled(self, image_data: dict, is_favorite: bool):
+        site = (image_data.get('site') or 'unknown').lower()
+        if site == 'unknown':
+            site = 'danbooru'
+        if is_favorite:
+            sel = self._choose_favorite_destination(site)
+            if not sel:
+                return
+            if sel.get('destination') == 'local':
+                fav_id = sel.get('folder_id') or self._get_default_favorite_id()
+                try:
+                    img_id = str(image_data.get('id'))
+                    self.db_manager.add_image_to_favorite(fav_id, img_id, site, image_data)
+                    self.status_bar.showMessage("已添加到本地收藏夹", 2000)
+                    self._refresh_favorites_if_active()
+                except Exception as e:
+                    QMessageBox.warning(self, "错误", f"添加到本地收藏夹失败：{str(e)}")
+            else:
+                post_id = str(image_data.get('id'))
+                self._start_online_fav_op(site, 'add', post_id)
+        else:
+            dest = self._get_site_dest_default(site)
+            if dest == 'local':
+                fav_id = self._get_site_default_fav_id(site) or self._get_default_favorite_id()
+                try:
+                    img_id = str(image_data.get('id'))
+                    self.db_manager.remove_image_from_favorite(fav_id, img_id, site)
+                    self.status_bar.showMessage("已从本地收藏夹移除", 2000)
+                    self._refresh_favorites_if_active()
+                except Exception as e:
+                    QMessageBox.warning(self, "错误", f"移除本地收藏失败：{str(e)}")
+            else:
+                post_id = str(image_data.get('id'))
+                self._start_online_fav_op(site, 'remove', post_id)
+
+    def _get_default_favorite_id(self) -> int:
+        favorites = self.db_manager.get_favorites()
+        for fav in favorites:
+            if fav.get('name') == '默认收藏夹':
+                return fav.get('id')
+        try:
+            return self.db_manager.create_favorite('默认收藏夹', '合并收藏，按站点分组')
+        except Exception:
+            return favorites[0]['id'] if favorites else self.db_manager.create_favorite('默认收藏夹')
+
+    def _load_favorites_into_tabs(self):
+        try:
+            source = self.fav_source
+            local_grouped = {key: [] for _, key in self.site_tabs}
+            try:
+                for _, key in self.site_tabs:
+                    fav_id = self._get_site_default_fav_id(key) or self._get_default_favorite_id()
+                    if not fav_id:
+                        continue
+                    items = self.db_manager.get_favorite_images(fav_id)
+                    for it in items:
+                        site_key = (it.get('site') or 'unknown').lower()
+                        data = it.get('image_data') or {}
+                        if site_key == key:
+                            local_grouped[key].append(data)
+            except Exception:
+                pass
+            if source == 'local':
+                for _, key in self.site_tabs:
+                    grid = self.fav_grids.get(key)
+                    if grid:
+                        grid.set_images(local_grouped.get(key, []), 1, 1)
+                return
+            self._start_online_fav_fetch()
+            for _, key in self.site_tabs:
+                if key != 'danbooru':
+                    grid = self.fav_grids.get(key)
+                    if grid:
+                        grid.set_images(local_grouped.get(key, []), 1, 1)
+            grid = self.fav_grids.get('danbooru')
+            if grid:
+                grid.set_images(local_grouped.get('danbooru', []), 1, 1)
+        except Exception as e:
+            print(f"加载收藏夹失败: {e}")
+
+    def _start_online_fav_fetch(self):
+        try:
+            username = self.config.get('sites.danbooru.username', '')
+            api_key = self.config.get('sites.danbooru.api_key', '')
+            if not username or not api_key:
+                self.status_bar.showMessage("Danbooru 在线收藏：请登录并配置用户名与API Key", 4000)
+                return
+        except Exception:
+            pass
+        self._cancel_online_fav_thread()
+        try:
+            thread = FavoritesFetchThread(self.api_manager, 'danbooru', page=1, limit=40)
+            thread.favorites_ready.connect(self._on_online_fav_ready)
+            thread.error.connect(self._on_online_fav_error)
+            self.current_fav_thread = thread
+            self.fav_source_box.setEnabled(False)
+            self.status_bar.showMessage("正在获取 Danbooru 在线收藏...", 2000)
+            thread.start()
+        except Exception as e:
+            self.status_bar.showMessage(f"启动在线收藏线程失败：{e}", 4000)
+
+    def _on_online_fav_ready(self, results: list):
+        try:
+            local_images = []
+            grid = self.fav_grids.get('danbooru')
+            if grid:
+                try:
+                    local_images = list(grid.current_images)
+                except Exception:
+                    local_images = []
+            final_images = results or []
+            if self.fav_source == 'merge':
+                seen = set()
+                merged = []
+                for it in (local_images + final_images):
+                    iid = str(it.get('id')) + '@' + (it.get('site') or 'danbooru')
+                    if iid not in seen:
+                        seen.add(iid)
+                        merged.append(it)
+                final_images = merged
+            if grid:
+                grid.set_images(final_images, 1, 1)
+            self.status_bar.showMessage("Danbooru 在线收藏已更新", 2000)
+        except Exception as e:
+            self.status_bar.showMessage(f"更新在线收藏失败：{e}", 4000)
+        finally:
+            self.fav_source_box.setEnabled(True)
+            self._cancel_online_fav_thread()
+
+    def _on_online_fav_error(self, msg: str):
+        try:
+            self.status_bar.showMessage(f"获取在线收藏失败：{msg}", 4000)
+        except Exception:
+            pass
+        finally:
+            self.fav_source_box.setEnabled(True)
+            self._cancel_online_fav_thread()
+
+    def _cancel_online_fav_thread(self):
+        try:
+            th = getattr(self, 'current_fav_thread', None)
+            if th:
+                try:
+                    th.cancel()
+                except Exception:
+                    pass
+                try:
+                    if th.isRunning():
+                        th.wait(500)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        finally:
+            self.current_fav_thread = None
+
+    def _get_site_default_fav_id(self, site: str):
+        try:
+            data = self.config.data
+            fav_def = (data.get('sites', {}).get(site, {}) or {}).get('favorite_default', {})
+            return fav_def.get('folder_id')
+        except Exception:
+            return None
+
+    def _get_site_dest_default(self, site: str) -> str:
+        try:
+            data = self.config.data
+            fav_def = (data.get('sites', {}).get(site, {}) or {}).get('favorite_default', {})
+            return fav_def.get('destination', 'local')
+        except Exception:
+            return 'local'
+
+    def _set_site_fav_default(self, site: str, destination: str, folder_id):
+        try:
+            sites = self.config.data.setdefault('sites', {})
+            site_cfg = sites.setdefault(site, {})
+            fav_def = site_cfg.setdefault('favorite_default', {})
+            fav_def['destination'] = destination
+            fav_def['folder_id'] = folder_id
+            self.config.save()
+        except Exception:
+            pass
+
+    def _choose_favorite_destination(self, site: str):
+        try:
+            dest = self._get_site_dest_default(site)
+            folder_id = self._get_site_default_fav_id(site)
+            if dest == 'online' or (dest == 'local' and folder_id):
+                return {'destination': dest, 'folder_id': folder_id, 'remember': False}
+        except Exception:
+            pass
+        dlg = FavoriteDestinationDialog(site, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            sel = dlg.get_selection()
+            if sel.get('remember'):
+                self._set_site_fav_default(site, sel.get('destination'), sel.get('folder_id'))
+            return sel
+        return None
+
+    def _start_online_fav_op(self, site: str, op: str, post_id: str):
+        try:
+            th = getattr(self, '_online_fav_thread', None)
+            if th and th.isRunning():
+                try:
+                    th.finished_ok.disconnect()
+                    th.error.disconnect()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        th = OnlineFavoriteOpThread(self.api_manager, site, op, post_id)
+        th.finished_ok.connect(lambda ok: self.status_bar.showMessage('在线收藏已更新' if ok else '在线收藏更新失败', 3000))
+        th.error.connect(lambda m: self.status_bar.showMessage(f'在线收藏操作错误：{m}', 5000))
+        self._online_fav_thread = th
+        th.start()
+    
     def setup_shortcuts(self):
         """设置快捷键"""
         from PyQt6.QtGui import QShortcut, QKeySequence
@@ -490,7 +866,37 @@ class MainWindow(QMainWindow):
             pass
         
         # 移除侧栏后不再连接收藏夹面板信号
-    
+        
+    def refresh_content(self):
+        self.perform_search()
+
+    def on_site_changed(self, site: str):
+        self.status_bar.showMessage(f"已切换到: {site}")
+        self.perform_search()
+
+    def on_viewer_tag_clicked(self, tag: str):
+        try:
+            from PyQt6.QtWidgets import QApplication
+            from PyQt6.QtCore import Qt
+            modifiers = QApplication.keyboardModifiers()
+        except Exception:
+            modifiers = None
+        if hasattr(self, 'search_input'):
+            base = self.search_input.text().strip()
+            if modifiers and (modifiers & Qt.KeyboardModifier.ControlModifier):
+                query = (f"{base} {tag}" if base else tag).strip()
+            else:
+                query = tag
+            self.search_input.setText(query)
+            try:
+                if self.windowState() & Qt.WindowState.WindowMinimized:
+                    self.showNormal()
+                self.activateWindow()
+                self.raise_()
+            except Exception:
+                pass
+            self.perform_search()
+
     def create_central_widget(self):
         """创建中央部件"""
         central_widget = QWidget()
@@ -1045,15 +1451,14 @@ class MainWindow(QMainWindow):
             pass
 
     def show_perf_panel(self):
-        try:
-            if not self._perf_panel:
-                self._perf_panel = PerformancePanel(self)
-                loader = getattr(self.image_grid, 'image_loader', None)
-                if loader and hasattr(loader, 'cache_stats_updated'):
-                    loader.cache_stats_updated.connect(lambda s: self._perf_panel.update_stats(s, self._last_first_ms))
-            self._perf_panel.show()
-        except Exception:
-            pass
+        if not getattr(self, '_perf_panel', None):
+            self._perf_panel = PerformancePanel(self)
+            loader = getattr(self.image_grid, 'image_loader', None)
+            if loader and hasattr(loader, 'cache_stats_updated'):
+                loader.cache_stats_updated.connect(lambda s: self._perf_panel.update_stats(s, self._last_first_ms))
+        self._perf_panel.show()
+        self._perf_panel.raise_()
+        self._perf_panel.activateWindow()
 
     def download_image(self, image_data: dict):
         try:
@@ -1206,26 +1611,21 @@ class PerformancePanel(QDialog):
         layout.addWidget(self.l2)
         layout.addWidget(self.l3)
 
-        from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSlider, QPushButton, QCheckBox
+        from PyQt6.QtWidgets import QHBoxLayout, QSlider, QCheckBox, QPushButton
         ctrl_row1 = QHBoxLayout()
         ctrl_row2 = QHBoxLayout()
 
         ctrl_row1.addWidget(QLabel("并发上限"))
         self.concurrency_slider = QSlider(Qt.Orientation.Horizontal)
         self.concurrency_slider.setMinimum(1)
-        self.concurrency_slider.setMaximum(16)
+        self.concurrency_slider.setMaximum(32)
         self.concurrency_slider.setTickInterval(1)
         self.concurrency_slider.setSingleStep(1)
         self.concurrency_label = QLabel("-")
         ctrl_row1.addWidget(self.concurrency_slider)
         ctrl_row1.addWidget(self.concurrency_label)
-
-        self.pause_preload_chk = QCheckBox("暂停预载")
-        self.btn_clear_preload = QPushButton("清空预载")
-        self.btn_cancel_all = QPushButton("取消所有加载")
-        ctrl_row2.addWidget(self.pause_preload_chk)
-        ctrl_row2.addWidget(self.btn_clear_preload)
-        ctrl_row2.addWidget(self.btn_cancel_all)
+        self.btn_apply = QPushButton("确定")
+        ctrl_row2.addWidget(self.btn_apply)
 
         layout.addLayout(ctrl_row1)
         layout.addLayout(ctrl_row2)
@@ -1233,9 +1633,7 @@ class PerformancePanel(QDialog):
 
         self._bind_loader()
         self.concurrency_slider.valueChanged.connect(self._on_concurrency_changed)
-        self.pause_preload_chk.toggled.connect(self._on_pause_toggled)
-        self.btn_clear_preload.clicked.connect(self._on_clear_preload)
-        self.btn_cancel_all.clicked.connect(self._on_cancel_all)
+        self.btn_apply.clicked.connect(self._on_apply_concurrency)
 
     def _bind_loader(self):
         self._loader = None
@@ -1259,15 +1657,6 @@ class PerformancePanel(QDialog):
 
     def _on_concurrency_changed(self, v: int):
         self.concurrency_label.setText(str(int(v)))
-        try:
-            if not self._loader:
-                return
-            if hasattr(self._loader, 'image_loader') and hasattr(self._loader.image_loader, 'set_max_concurrent'):
-                self._loader.image_loader.set_max_concurrent(int(v))
-            elif hasattr(self._loader, 'set_max_concurrent'):
-                self._loader.set_max_concurrent(int(v))
-        except Exception:
-            pass
 
     def _on_pause_toggled(self, checked: bool):
         try:
@@ -1276,21 +1665,24 @@ class PerformancePanel(QDialog):
         except Exception:
             pass
 
-    def _on_clear_preload(self):
+    def _on_apply_concurrency(self):
         try:
-            if self._loader and hasattr(self._loader, 'clear_preload_queue'):
-                self._loader.clear_preload_queue()
+            if not self._loader:
+                return
+            v = int(self.concurrency_slider.value())
+            if hasattr(self._loader, 'image_loader') and hasattr(self._loader.image_loader, 'set_max_concurrent'):
+                self._loader.image_loader.set_max_concurrent(v)
+            elif hasattr(self._loader, 'set_max_concurrent'):
+                self._loader.set_max_concurrent(v)
+            try:
+                if hasattr(self._loader, 'base_max_concurrent'):
+                    self._loader.base_max_concurrent = v
+            except Exception:
+                pass
         except Exception:
             pass
 
-    def _on_cancel_all(self):
-        try:
-            if self._loader and hasattr(self._loader, 'cancel_all_loads'):
-                self._loader.cancel_all_loads()
-            elif self._loader and hasattr(self._loader, 'cancel_all'):
-                self._loader.cancel_all()
-        except Exception:
-            pass
+    
 
     def update_stats(self, stats: dict, first_ms):
         try:
@@ -1314,6 +1706,9 @@ class PerformancePanel(QDialog):
                 self.concurrency_slider.blockSignals(False)
         except Exception:
             pass
+    
+    def closeEvent(self, event):
+        event.accept()
     
     
 
@@ -1932,7 +2327,11 @@ class PerformancePanel(QDialog):
     
     def closeEvent(self, event):
         """窗口关闭事件"""
-        self.save_geometry()
+        try:
+            self.save_geometry()
+        except Exception:
+            event.accept()
+            return
         
         # 关闭所有图片查看器窗口
         try:

@@ -39,7 +39,7 @@ class Config:
             "window": {
                 "width": 1200,
                 "height": 800,
-                "maximized": True
+                "maximized": False
             },
             "appearance": {
                 "theme": "dark",
