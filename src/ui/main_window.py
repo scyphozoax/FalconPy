@@ -48,7 +48,7 @@ class MainWindow(QMainWindow):
         self.theme_manager = ThemeManager()
         
         # 初始化缓存管理器
-        cache_dir = self.config.app_dir / "cache" / "images"
+        cache_dir = self.config.cache_dir
         self.cache_manager = CacheManager(str(cache_dir))
         # 初始化 i18n
         try:
@@ -1891,7 +1891,7 @@ class PerformancePanel(QDialog):
     def open_cache_dir(self):
         """打开图片缓存目录"""
         try:
-            path = getattr(self.cache_manager, 'cache_dir', None) or (self.config.app_dir / 'cache' / 'images')
+            path = getattr(self.cache_manager, 'cache_dir', None) or self.config.cache_dir
             path = Path(path)
             path.mkdir(parents=True, exist_ok=True)
             if os.name == 'nt':
