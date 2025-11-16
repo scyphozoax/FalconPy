@@ -3,7 +3,7 @@
 ; Non-commercial use only
 
 #define MyAppName "FalconPy"
-#define MyAppVersion "0.3.0"
+#define MyAppVersion "0.3.1"
 #define MyAppPublisher "Studio ScyphozoaX | Rabbit Hole"
 #define MyAppURL "https://scyphozoax.cn"
 #define MyAppExeName "FalconPy.exe"
