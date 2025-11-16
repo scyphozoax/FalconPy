@@ -18,7 +18,6 @@ from .widgets.image_grid import ImageGridWidget
 from .widgets.thumbnail import ImageThumbnail
 # 已移除左侧收藏夹面板
 from .widgets.site_selector import SiteSelectorWidget
-from .dialogs.login_dialog import LoginDialog
 from .dialogs.account_management_dialog import AccountManagementDialog
 from .dialogs.settings_dialog import SettingsDialog
 from .dialogs.download_progress_dialog import DownloadProgressDialog
@@ -351,89 +350,27 @@ class MainWindow(QMainWindow):
         # 如果有对话框打开，关闭对话框
         # 这里可以添加更多ESC处理逻辑
         
-    def show_account_management_dialog(self):
-        try:
-            dlg = AccountManagementDialog(self)
-            dlg.exec()
-        except Exception:
-            QMessageBox.information(self, "提示", "账号管理暂不可用")
+    
 
-    def show_settings_dialog(self):
-        try:
-            dlg = SettingsDialog(self.config, self)
-            dlg.exec()
-        except Exception:
-            QMessageBox.information(self, "提示", "设置暂不可用")
+    
 
-    def open_config_file(self):
-        try:
-            path = Path(self.config.config_file)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if not path.exists():
-                self.config.save_config()
-            if os.name == 'nt':
-                os.startfile(str(path))
-            else:
-                from PyQt6.QtGui import QDesktopServices
-                from PyQt6.QtCore import QUrl
-                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
-            self.status_bar.showMessage(self.i18n.t("已打开配置文件: {file}").format(file=str(path)), 3000)
-        except Exception:
-            QMessageBox.information(self, "提示", "无法打开配置文件")
+    
 
-    def _on_fav_source_changed(self, idx: int):
-        try:
-            text = self.fav_source_box.currentText().strip()
-            if text.startswith('本地'):
-                self.fav_source = 'local'
-            elif text.startswith('在线'):
-                self.fav_source = 'online'
-            else:
-                self.fav_source = 'merge'
-        except Exception:
-            pass
+    
 
-    def _on_tab_changed(self, index: int):
-        try:
-            pass
-        except Exception:
-            pass
+    
 
-    def _refresh_favorites_if_active(self):
-        try:
-            pass
-        except Exception:
-            pass
+    
 
-    def _load_favorites_into_tabs(self):
-        try:
-            pass
-        except Exception:
-            pass
+    
 
-    def _start_online_fav_fetch(self):
-        try:
-            pass
-        except Exception:
-            pass
+    
 
-    def _on_online_fav_ready(self, results: list):
-        try:
-            pass
-        except Exception:
-            pass
+    
 
-    def _on_online_fav_error(self, msg: str):
-        try:
-            pass
-        except Exception:
-            pass
+    
 
-    def _cancel_online_fav_thread(self):
-        try:
-            self.current_fav_thread = None
-        except Exception:
-            pass
+    
 
     def show_image_viewer(self, image_data: dict):
         from .widgets.image_viewer import ImageViewerDialog
@@ -464,88 +401,15 @@ class MainWindow(QMainWindow):
             pass
 
 
-    def refresh_content(self):
-        try:
-            site = self.site_selector.get_current_site()
-            if site == "yande.re":
-                site = "yandere"
-            self._last_site = site
-            page = getattr(self.image_grid, 'current_page', None) or self._last_page or 1
-            query = self._last_query
-            from .threads.api_search_thread import APISearchThread
-            if hasattr(self, 'current_search_thread') and self.current_search_thread:
-                try:
-                    if self.current_search_thread.isRunning():
-                        try:
-                            if hasattr(self.current_search_thread, 'cancel'):
-                                self.current_search_thread.cancel()
-                        except Exception:
-                            pass
-                        if not self.current_search_thread.wait(1000):
-                            self.current_search_thread.terminate()
-                            self.current_search_thread.wait()
-                except Exception:
-                    pass
-            self.current_search_thread = APISearchThread(self.api_manager, site, query, int(page), 20)
-            self.current_search_thread.results_ready.connect(self._on_search_results)
-            self.current_search_thread.error.connect(self._on_search_error)
-            try:
-                self.status_bar.showMessage(self.i18n.t("正在刷新第 {page} 页").format(page=int(page)))
-            except Exception:
-                pass
-            self.current_search_thread.start()
-        except Exception:
-            pass
+    
 
-    def on_site_changed(self, site: str):
-        try:
-            s = site
-            if s == "yande.re":
-                s = "yandere"
-            self._last_site = s
-            self.status_bar.showMessage(self.i18n.t("已切换到: {site}").format(site=site))
-            self.refresh_content()
-        except Exception:
-            pass
+    
 
-    def add_to_favorites(self, image_data: dict):
-        try:
-            self.status_bar.showMessage(self.i18n.t("已添加到收藏夹"), 2000)
-        except Exception:
-            pass
+    
 
-    def on_favorite_toggled(self, image_data: dict, is_favorite: bool):
-        try:
-            if is_favorite:
-                self.add_to_favorites(image_data)
-                self.status_bar.showMessage(self.i18n.t("已添加到收藏夹"), 2000)
-            else:
-                self.status_bar.showMessage(self.i18n.t("已取消收藏"), 2000)
-        except Exception:
-            pass
+    
 
-    def on_viewer_tag_clicked(self, tag: str):
-        try:
-            from PyQt6.QtWidgets import QApplication
-            from PyQt6.QtCore import Qt
-            modifiers = QApplication.keyboardModifiers()
-        except Exception:
-            modifiers = None
-        if hasattr(self, 'search_input'):
-            base = self.search_input.text().strip()
-            if modifiers and (modifiers & Qt.KeyboardModifier.ControlModifier):
-                query = (f"{base} {tag}" if base else tag).strip()
-            else:
-                query = tag
-            self.search_input.setText(query)
-            try:
-                if self.windowState() & Qt.WindowState.WindowMinimized:
-                    self.showNormal()
-                self.activateWindow()
-                self.raise_()
-            except Exception:
-                pass
-            self.perform_search()
+    
 
     def _on_viewer_destroyed(self, obj=None):
         try:
@@ -555,17 +419,9 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def apply_settings(self):
-        try:
-            self.update()
-        except Exception:
-            pass
+    
 
-    def check_existing_sessions(self):
-        try:
-            pass
-        except Exception:
-            pass
+    
 
     def toggle_favorite(self, image_data):
         """切换图片收藏状态"""
@@ -882,10 +738,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
     
-    def setup_style(self):
-        """设置样式 - 已弃用，现在使用主题管理器"""
-        # 此方法已被主题管理器替代，不再使用硬编码样式
-        pass
+    
     
     def restore_geometry(self):
         """恢复窗口几何信息"""
@@ -905,51 +758,7 @@ class MainWindow(QMainWindow):
         self.config.set('window.maximized', self.isMaximized())
         self.config.save_config()
     
-    def closeEvent(self, event):
-        try:
-            if hasattr(self, 'current_search_thread') and self.current_search_thread:
-                try:
-                    if self.current_search_thread.isRunning():
-                        try:
-                            if hasattr(self.current_search_thread, 'cancel'):
-                                self.current_search_thread.cancel()
-                        except Exception:
-                            pass
-                        if not self.current_search_thread.wait(1000):
-                            self.current_search_thread.terminate()
-                            self.current_search_thread.wait()
-                except Exception:
-                    pass
-            for t in list(getattr(self, '_get_post_threads', []) or []):
-                try:
-                    if t.isRunning():
-                        t.wait(2000)
-                except Exception:
-                    pass
-            for v in list(getattr(self, 'image_viewers', []) or []):
-                try:
-                    rt = getattr(v, 'resolve_thread', None)
-                    if rt and rt.isRunning():
-                        try:
-                            rt.terminate()
-                            rt.wait()
-                        except Exception:
-                            pass
-                    dt = getattr(v, 'download_thread', None)
-                    if dt and dt.isRunning():
-                        try:
-                            dt.terminate()
-                            dt.wait()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        try:
-            super().closeEvent(event)
-        except Exception:
-            pass
+    
     
     def perform_search(self):
         """执行搜索"""
