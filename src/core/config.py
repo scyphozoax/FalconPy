@@ -121,6 +121,12 @@ class Config:
                 "last_notified": None,
                 "source": "github",
                 "github_repo": ""
+            },
+            "sd": {
+                "url": "http://127.0.0.1:7860",
+                "browser": "edge",
+                "cdp_port": 9222,
+                "attach_only": False
             }
         }
         

@@ -25,3 +25,6 @@ thumbnail/
 favorites/
 config.json
 falconpy.db
+assets/falconpyinstaller.iss
+assets/pre-release.iss
+assets/falconpyinstaller.iss

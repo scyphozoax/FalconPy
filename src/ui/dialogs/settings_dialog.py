@@ -469,6 +469,39 @@ class SettingsDialog(QDialog):
         self.favorites_tab = FavoritesTab(self.config, self.i18n)
         self._content_layout.addWidget(self.favorites_tab)
 
+        sd_group = QGroupBox(self.i18n.t("Stable Diffusion"))
+        sd_form = QFormLayout(sd_group)
+        sd_form.setContentsMargins(12, 10, 12, 10)
+        sd_form.setVerticalSpacing(10)
+        sd_form.setHorizontalSpacing(12)
+        self.sd_url_edit = QLineEdit()
+        try:
+            self.sd_url_edit.setText(str(self.config.get('sd.url', 'http://127.0.0.1:7860') or 'http://127.0.0.1:7860'))
+        except Exception:
+            self.sd_url_edit.setText('http://127.0.0.1:7860')
+        self.sd_browser_box = QComboBox()
+        self.sd_browser_box.addItem('Edge', 'edge')
+        self.sd_browser_box.addItem('Chrome', 'chrome')
+        try:
+            b = str(self.config.get('sd.browser', 'edge') or 'edge')
+            idx = max(0, self.sd_browser_box.findData(b))
+            self.sd_browser_box.setCurrentIndex(idx)
+        except Exception:
+            pass
+        self.sd_port_spin = QSpinBox()
+        self.sd_port_spin.setRange(1024, 65535)
+        try:
+            self.sd_port_spin.setValue(int(self.config.get('sd.cdp_port', 9222)))
+        except Exception:
+            self.sd_port_spin.setValue(9222)
+        self.sd_attach_only = QCheckBox(self.i18n.t("仅附加现有浏览器，不自动启动"))
+        self.sd_attach_only.setChecked(bool(self.config.get('sd.attach_only', False)))
+        sd_form.addRow(self.i18n.t("WebUI 地址"), self.sd_url_edit)
+        sd_form.addRow(self.i18n.t("浏览器"), self.sd_browser_box)
+        sd_form.addRow(self.i18n.t("CDP 端口"), self.sd_port_spin)
+        sd_form.addRow(self.sd_attach_only)
+        self._content_layout.addWidget(sd_group)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         try:
@@ -519,6 +552,13 @@ class SettingsDialog(QDialog):
         self.download_tab.save_settings()
         self.update_tab.save_settings()
         self.favorites_tab.save_settings()
+        try:
+            self.config.set('sd.url', str(self.sd_url_edit.text()).strip())
+            self.config.set('sd.browser', self.sd_browser_box.currentData())
+            self.config.set('sd.cdp_port', int(self.sd_port_spin.value()))
+            self.config.set('sd.attach_only', bool(self.sd_attach_only.isChecked()))
+        except Exception:
+            pass
         try:
             m = 'off'
             if self.cf_hide.isChecked():

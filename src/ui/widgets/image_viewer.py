@@ -23,6 +23,7 @@ from .gif_player import GifPlayer
 from .video_controls import VideoControls
 from ...core.i18n import I18n
 from ...core.config import Config
+from ...integrations.sd_cdp import send_to_sd
 
 class ImageDownloadThread(QThread):
     """图片下载线程"""
@@ -945,6 +946,8 @@ class ImageViewerDialog(QMainWindow):
         self.copy_source_btn.clicked.connect(self.copy_source_link)
         self.copy_tags_btn = QPushButton(self.i18n.t("复制标签"))
         self.copy_tags_btn.clicked.connect(self.copy_tags_text)
+        self.send_to_sd_btn = QPushButton(self.i18n.t("发送到SD"))
+        self.send_to_sd_btn.clicked.connect(self.send_tags_to_sd)
 
         # 原图/大图切换
         self.toggle_original_btn = QPushButton(self.i18n.t("切换为大图"))
@@ -959,6 +962,7 @@ class ImageViewerDialog(QMainWindow):
         button_layout.addWidget(self.copy_image_btn)
         button_layout.addWidget(self.copy_source_btn)
         button_layout.addWidget(self.copy_tags_btn)
+        button_layout.addWidget(self.send_to_sd_btn)
         button_layout.addWidget(self.toggle_original_btn)
         button_layout.addStretch()
         
@@ -1855,6 +1859,52 @@ class ImageViewerDialog(QMainWindow):
             pass
         if names:
             QApplication.clipboard().setText(', '.join(names))
+
+    def _get_tags_text(self, only_general: bool = False) -> str:
+        names = []
+        try:
+            tag_details = self.image_data.get('tag_details')
+            if isinstance(tag_details, dict) and tag_details:
+                if only_general:
+                    key_names = tag_details.get('general', [])
+                    if isinstance(key_names, list):
+                        names.extend([n for n in key_names if n])
+                else:
+                    order = ['artist', 'character', 'copyright', 'general', 'meta']
+                    for key in order:
+                        key_names = tag_details.get(key, [])
+                        if isinstance(key_names, list):
+                            names.extend([n for n in key_names if n])
+            else:
+                tags = self.image_data.get('tags', [])
+                if isinstance(tags, list):
+                    if tags and isinstance(tags[0], dict):
+                        for t in tags:
+                            if only_general:
+                                if str(t.get('type', '')) == 'general' and t.get('name'):
+                                    names.append(t.get('name'))
+                            else:
+                                if t.get('name'):
+                                    names.append(t.get('name'))
+                    else:
+                        names = [n for n in tags if n]
+                elif isinstance(tags, str):
+                    names = [n for n in tags.split() if n]
+        except Exception:
+            pass
+        return ', '.join(names) if names else ''
+
+    def send_tags_to_sd(self):
+        text = self._get_tags_text(only_general=True)
+        if not text:
+            QMessageBox.information(self, self.i18n.t("提示"), self.i18n.t("无标签信息"))
+            return
+        cfg = Config()
+        ok, msg = send_to_sd(text, cfg)
+        if ok:
+            QMessageBox.information(self, self.i18n.t("Stable Diffusion"), self.i18n.t("已写入正向提示词"))
+        else:
+            QMessageBox.warning(self, self.i18n.t("Stable Diffusion"), self.i18n.t(msg))
 
     def toggle_original(self):
         """切换原图/大图并重新加载"""
