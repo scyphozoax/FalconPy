@@ -575,8 +575,14 @@ class ImageThumbnail(QFrame):
                 return
             r = str(self._image_data.get('rating', '')).lower()
             if r in ('s', 'q', 'e') and self._blur_radius > 0:
+                eff_radius = self._blur_radius
+                if r == 's':
+                    try:
+                        eff_radius = max(1, int(round(self._blur_radius * 0.5)))
+                    except Exception:
+                        eff_radius = max(1, int(self._blur_radius // 2))
                 eff = QGraphicsBlurEffect()
-                eff.setBlurRadius(self._blur_radius)
+                eff.setBlurRadius(eff_radius)
                 self._image_label.setGraphicsEffect(eff)
             else:
                 self._image_label.setGraphicsEffect(None)
