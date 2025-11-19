@@ -103,6 +103,17 @@ class ImageGridWidget(QWidget):
             self.image_loader.image_loaded.connect(self.on_image_loaded)
             self.image_loader.load_failed.connect(self.on_image_failed)
         
+        from PyQt6.QtCore import QTimer as _QTmr
+        self._recreate_timer = _QTmr()
+        self._recreate_timer.setSingleShot(False)
+        self._recreate_timer.timeout.connect(self._recreate_step)
+        self._recreate_index = 0
+        try:
+            from ...core.config import Config as _Cfg2
+            _c2 = _Cfg2()
+            self._recreate_batch_size = int(_c2.get('appearance.grid_batch_size', 12) or 12)
+        except Exception:
+            self._recreate_batch_size = 12
         self.setup_ui()
     
     def _connect_event_manager(self):
@@ -262,11 +273,15 @@ class ImageGridWidget(QWidget):
         self.thumbnail_widgets.clear()
         self.selected_image = None
         self.selected_thumbnail = None
+        try:
+            self._recreate_timer.stop()
+        except Exception:
+            pass
     
     def update_grid(self):
         """更新网格显示"""
         if not self.thumbnail_widgets:
-            self.recreate_thumbnails()
+            self.recreate_thumbnails_async()
         else:
             prev_keys = [self._image_key(w.image_data) for w in self.thumbnail_widgets]
             new_keys = [self._image_key(img) for img in self.images]
@@ -432,6 +447,53 @@ class ImageGridWidget(QWidget):
             
             self.thumbnail_widgets.append(thumbnail)
             self.grid_layout.addWidget(thumbnail, row, col)
+
+    def recreate_thumbnails_async(self):
+        self.clear_thumbnail_cache()
+        for i in reversed(range(self.grid_layout.count())):
+            item = self.grid_layout.itemAt(i)
+            if item and item.widget():
+                self.grid_layout.removeItem(item)
+        self._recreate_index = 0
+        self._recreate_timer.start(0)
+
+    def _recreate_step(self):
+        start = self._recreate_index
+        end = min(len(self.images), start + max(1, int(self._recreate_batch_size)))
+        for i in range(start, end):
+            image_data = self.images[i]
+            row = i // self.columns
+            col = i % self.columns
+            blur_flag = False
+            try:
+                m = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
+                blur_flag = (m == 'blur') and (str(image_data.get('rating', '')).lower() == 'e')
+            except Exception:
+                blur_flag = False
+            try:
+                blur_radius = int(self._cfg.get('appearance.e_rating_blur_radius', 12)) if self._cfg else 12
+            except Exception:
+                blur_radius = 12
+            thumbnail = ImageThumbnail(
+                image_data=image_data,
+                thumbnail_size=self.thumbnail_size,
+                image_loader=self.image_loader,
+                event_manager=self.event_manager,
+                transform_mode_getter=self.get_transform_mode,
+                blur_if_e=blur_flag,
+                blur_radius=blur_radius
+            )
+            if not self.event_manager:
+                thumbnail.clicked.connect(self.image_selected.emit)
+                thumbnail.favorite_clicked.connect(lambda d=image_data: self._on_thumbnail_favorite_clicked(d))
+                thumbnail.selected.connect(self.on_thumbnail_selected)
+            self.thumbnail_widgets.append(thumbnail)
+            self.grid_layout.addWidget(thumbnail, row, col)
+        self._recreate_index = end
+        if self._recreate_index >= len(self.images):
+            self._recreate_timer.stop()
+            self.grid_layout.setRowStretch(self.grid_layout.rowCount(), 1)
+            self.update_minimum_width()
 
     def _image_key(self, image_data: dict) -> str:
         url = image_data.get('thumbnail_url') or image_data.get('preview_url') or image_data.get('file_url')

@@ -33,6 +33,7 @@ from ..core.session_manager import SessionManager
 from ..core.cache_manager import CacheManager
 from ..core.i18n import I18n
 from ..core.update_manager import UpdateManager
+from .threads.update_check_thread import UpdateCheckThread
 
 class MainWindow(QMainWindow):
     """主窗口"""
@@ -66,6 +67,7 @@ class MainWindow(QMainWindow):
         self._last_query = ''
         self._last_site = ''
         self._last_page = 1
+        self._bg_threads = []
         
         # 设置API管理器
         self.setup_api_manager()
@@ -651,82 +653,115 @@ class MainWindow(QMainWindow):
         self.update_timer.timeout.connect(self._on_update_timer)
         self.update_timer.start(interval * 60 * 1000)
         self._on_update_timer()
-
+    
     def _on_update_timer(self):
         try:
-            info = self.update_manager.check_now()
-            if info.get('has_update'):
-                ver = info.get('latest_version') or ''
-                ignored = set(self.config.get('updates.ignore_versions', []) or [])
-                last = self.config.get('updates.last_notified', None)
-                if ver in ignored or ver == last:
-                    return
-                self.status_bar.showMessage(self.i18n.t("发现新版本: {ver}").format(ver=ver), 8000)
-                msg = QMessageBox(self)
-                msg.setWindowTitle(self.i18n.t('更新可用'))
-                msg.setText(self.i18n.t('发现新版本 {ver}').format(ver=ver))
-                msg.setInformativeText(self.i18n.t('是否前往下载页面？'))
-                download_btn = msg.addButton(self.i18n.t('前往下载'), QMessageBox.ButtonRole.AcceptRole)
-                later_btn = msg.addButton(self.i18n.t('稍后提醒'), QMessageBox.ButtonRole.RejectRole)
-                ignore_btn = msg.addButton(self.i18n.t('忽略此版本'), QMessageBox.ButtonRole.DestructiveRole)
-                msg.exec()
-                clicked = msg.clickedButton()
-                if clicked == download_btn:
-                    url = info.get('download_url') or info.get('notes_url')
-                    if url:
-                        import webbrowser
-                        webbrowser.open(url)
-                    self.config.set('updates.last_notified', ver)
-                    self.config.save_config()
-                elif clicked == ignore_btn:
-                    ignored.add(ver)
-                    self.config.set('updates.ignore_versions', list(ignored))
-                    self.config.save_config()
-                else:
-                    self.config.set('updates.last_notified', ver)
-                    self.config.save_config()
-            else:
+            t = UpdateCheckThread(self.update_manager)
+            try:
+                t.setParent(self)
+            except Exception:
                 pass
+            self._bg_threads.append(t)
+            def _handle(info: dict):
+                try:
+                    if info.get('has_update'):
+                        ver = info.get('最新版本') or info.get('latest_version') or ''
+                        ignored = set(self.config.get('updates.ignore_versions', []) or [])
+                        last = self.config.get('updates.last_notified', None)
+                        if ver in ignored or ver == last:
+                            return
+                        self.status_bar.showMessage(self.i18n.t("发现新版本: {ver}").format(ver=ver), 8000)
+                        msg = QMessageBox(self)
+                        msg.setWindowTitle(self.i18n.t('更新可用'))
+                        msg.setText(self.i18n.t('发现新版本 {ver}').format(ver=ver))
+                        msg.setInformativeText(self.i18n.t('是否前往下载页面？'))
+                        download_btn = msg.addButton(self.i18n.t('前往下载'), QMessageBox.ButtonRole.AcceptRole)
+                        later_btn = msg.addButton(self.i18n.t('稍后提醒'), QMessageBox.ButtonRole.RejectRole)
+                        ignore_btn = msg.addButton(self.i18n.t('忽略此版本'), QMessageBox.ButtonRole.DestructiveRole)
+                        msg.exec()
+                        clicked = msg.clickedButton()
+                        if clicked == download_btn:
+                            url = info.get('download_url') or info.get('notes_url')
+                            if url:
+                                import webbrowser
+                                webbrowser.open(url)
+                            self.config.set('updates.last_notified', ver)
+                            self.config.save_config()
+                        elif clicked == ignore_btn:
+                            ignored.add(ver)
+                            self.config.set('updates.ignore_versions', list(ignored))
+                            self.config.save_config()
+                        else:
+                            self.config.set('updates.last_notified', ver)
+                            self.config.save_config()
+                except Exception:
+                    pass
+            try:
+                t.done.connect(_handle)
+                t.finished.connect(lambda: self._cleanup_bg_thread(t))
+            except Exception:
+                pass
+            t.start()
         except Exception:
             pass
-
+    
     def check_for_updates(self):
         try:
             self.status_bar.showMessage(self.i18n.t('正在检查更新...'), 2000)
-            info = self.update_manager.check_now()
-            if info.get('has_update'):
-                ver = info.get('latest_version') or ''
-                msg = QMessageBox(self)
-                msg.setWindowTitle(self.i18n.t('更新可用'))
-                msg.setText(self.i18n.t('发现新版本 {ver}').format(ver=ver))
-                msg.setInformativeText(self.i18n.t('是否前往下载页面？'))
-                download_btn = msg.addButton(self.i18n.t('前往下载'), QMessageBox.ButtonRole.AcceptRole)
-                later_btn = msg.addButton(self.i18n.t('稍后提醒'), QMessageBox.ButtonRole.RejectRole)
-                ignore_btn = msg.addButton(self.i18n.t('忽略此版本'), QMessageBox.ButtonRole.DestructiveRole)
-                msg.exec()
-                clicked = msg.clickedButton()
-                if clicked == download_btn:
-                    url = info.get('download_url') or info.get('notes_url')
-                    if url:
-                        import webbrowser
-                        webbrowser.open(url)
-                    self.config.set('updates.last_notified', ver)
-                    self.config.save_config()
-                elif clicked == ignore_btn:
-                    ignored = set(self.config.get('updates.ignore_versions', []) or [])
-                    ignored.add(ver)
-                    self.config.set('updates.ignore_versions', list(ignored))
-                    self.config.save_config()
-                else:
-                    self.config.set('updates.last_notified', ver)
-                    self.config.save_config()
-            else:
-                self.status_bar.showMessage(self.i18n.t('已是最新版本'), 4000)
-        except Exception as e:
+            t = UpdateCheckThread(self.update_manager)
             try:
-                self.status_bar.showMessage(self.i18n.t('检查更新失败: {msg}').format(msg=str(e)), 4000)
+                t.setParent(self)
             except Exception:
                 pass
+            self._bg_threads.append(t)
+            def _handle(info: dict):
+                try:
+                    if info.get('has_update'):
+                        ver = info.get('latest_version') or ''
+                        msg = QMessageBox(self)
+                        msg.setWindowTitle(self.i18n.t('更新可用'))
+                        msg.setText(self.i18n.t('发现新版本 {ver}').format(ver=ver))
+                        msg.setInformativeText(self.i18n.t('是否前往下载页面？'))
+                        download_btn = msg.addButton(self.i18n.t('前往下载'), QMessageBox.ButtonRole.AcceptRole)
+                        later_btn = msg.addButton(self.i18n.t('稍后提醒'), QMessageBox.ButtonRole.RejectRole)
+                        ignore_btn = msg.addButton(self.i18n.t('忽略此版本'), QMessageBox.ButtonRole.DestructiveRole)
+                        msg.exec()
+                        clicked = msg.clickedButton()
+                        if clicked == download_btn:
+                            url = info.get('download_url') or info.get('notes_url')
+                            if url:
+                                import webbrowser
+                                webbrowser.open(url)
+                            self.config.set('updates.last_notified', ver)
+                            self.config.save_config()
+                        elif clicked == ignore_btn:
+                            ignored = set(self.config.get('updates.ignore_versions', []) or [])
+                            ignored.add(ver)
+                            self.config.set('updates.ignore_versions', list(ignored))
+                            self.config.save_config()
+                        else:
+                            self.config.set('updates.last_notified', ver)
+                            self.config.save_config()
+                    else:
+                        self.status_bar.showMessage(self.i18n.t('已是最新版本'), 4000)
+                except Exception:
+                    pass
+            try:
+                t.done.connect(_handle)
+                t.finished.connect(lambda: self._cleanup_bg_thread(t))
+            except Exception:
+                pass
+            t.start()
+        except Exception:
+            pass
+
+    def _cleanup_bg_thread(self, thread):
+        try:
+            if thread in getattr(self, '_bg_threads', []):
+                self._bg_threads.remove(thread)
+            thread.deleteLater()
+        except Exception:
+            pass
     
     def focus_search(self):
         """聚焦到搜索框"""
@@ -2430,6 +2465,27 @@ class PerformancePanel(QDialog):
         try:
             if hasattr(self, 'image_grid') and self.image_grid and hasattr(self.image_grid, 'image_loader'):
                 self.image_grid.image_loader.cancel_all()
+        except Exception:
+            pass
+
+        try:
+            for t in list(getattr(self, '_bg_threads', [])):
+                try:
+                    t.requestInterruption()
+                except Exception:
+                    pass
+                try:
+                    t.quit()
+                    if not t.wait(500):
+                        t.terminate()
+                        t.wait()
+                except Exception:
+                    try:
+                        t.terminate()
+                        t.wait()
+                    except Exception:
+                        pass
+            self._bg_threads.clear()
         except Exception:
             pass
         

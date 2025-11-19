@@ -629,9 +629,14 @@ class SettingsDialog(QDialog):
         try:
             import sys
             from pathlib import Path
-            root = Path(__file__).resolve().parents[3]
-            script = str(root / "main.py")
-            QProcess.startDetached(sys.executable, [script], str(root))
+            if getattr(sys, "frozen", False):
+                exe = Path(sys.executable)
+                work = exe.parent
+                QProcess.startDetached(str(exe), sys.argv[1:], str(work))
+            else:
+                root = Path(__file__).resolve().parents[3]
+                script = str(root / "main.py")
+                QProcess.startDetached(sys.executable, [script] + sys.argv[1:], str(root))
             self.accept()
             from PyQt6.QtWidgets import QApplication
             QApplication.instance().quit()
