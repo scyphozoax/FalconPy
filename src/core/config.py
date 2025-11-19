@@ -50,6 +50,8 @@ class Config:
                 "show_image_info": True,
                 "animate_transitions": True,
                 "language": "zh_CN",
+                "nsfw_filter": "hide",
+                "nsfw_blur_radius": 25,
                 "e_rating_filter": "hide",
                 "e_rating_blur_radius": 25
             },

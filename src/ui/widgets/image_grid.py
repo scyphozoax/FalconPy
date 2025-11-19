@@ -232,12 +232,12 @@ class ImageGridWidget(QWidget):
         """设置图片列表"""
         mode = 'off'
         try:
-            mode = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
+            mode = str(self._cfg.get('appearance.nsfw_filter', self._cfg.get('appearance.e_rating_filter', 'off')) or 'off') if self._cfg else 'off'
         except Exception:
             mode = 'off'
         if mode == 'hide':
             try:
-                self.images = [img for img in images if str(img.get('rating', '')).lower() != 'e']
+                self.images = [img for img in images if str(img.get('rating', '')).lower() not in ('q', 'e')]
             except Exception:
                 self.images = images
         else:
@@ -419,14 +419,9 @@ class ImageGridWidget(QWidget):
             row = i // self.columns
             col = i % self.columns
             
-            blur_flag = False
+            blur_flag = True
             try:
-                m = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
-                blur_flag = (m == 'blur') and (str(image_data.get('rating', '')).lower() == 'e')
-            except Exception:
-                blur_flag = False
-            try:
-                blur_radius = int(self._cfg.get('appearance.e_rating_blur_radius', 12)) if self._cfg else 12
+                blur_radius = int(self._cfg.get('appearance.nsfw_blur_radius', self._cfg.get('appearance.e_rating_blur_radius', 12))) if self._cfg else 12
             except Exception:
                 blur_radius = 12
             thumbnail = ImageThumbnail(
@@ -464,14 +459,9 @@ class ImageGridWidget(QWidget):
             image_data = self.images[i]
             row = i // self.columns
             col = i % self.columns
-            blur_flag = False
+            blur_flag = True
             try:
-                m = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
-                blur_flag = (m == 'blur') and (str(image_data.get('rating', '')).lower() == 'e')
-            except Exception:
-                blur_flag = False
-            try:
-                blur_radius = int(self._cfg.get('appearance.e_rating_blur_radius', 12)) if self._cfg else 12
+                blur_radius = int(self._cfg.get('appearance.nsfw_blur_radius', self._cfg.get('appearance.e_rating_blur_radius', 12))) if self._cfg else 12
             except Exception:
                 blur_radius = 12
             thumbnail = ImageThumbnail(
@@ -516,15 +506,11 @@ class ImageGridWidget(QWidget):
                 if w.image_data is not img:
                     w.update_image_data(img)
                 try:
-                    m = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
-                except Exception:
-                    m = 'off'
-                try:
-                    radius = int(self._cfg.get('appearance.e_rating_blur_radius', 25)) if self._cfg else 25
+                    radius = int(self._cfg.get('appearance.nsfw_blur_radius', self._cfg.get('appearance.e_rating_blur_radius', 25))) if self._cfg else 25
                 except Exception:
                     radius = 25
                 try:
-                    w.update_blur_policy((m == 'blur') and (str(img.get('rating', '')).lower() == 'e'), radius)
+                    w.update_blur_policy(True, radius)
                 except Exception:
                     pass
                 new_widgets.append(w)
@@ -532,14 +518,9 @@ class ImageGridWidget(QWidget):
             else:
                 row = len(new_widgets) // self.columns
                 col = len(new_widgets) % self.columns
-                m = 'off'
+                blur_flag = True
                 try:
-                    m = str(self._cfg.get('appearance.e_rating_filter', 'off') or 'off') if self._cfg else 'off'
-                except Exception:
-                    m = 'off'
-                blur_flag = (m == 'blur') and (str(img.get('rating', '')).lower() == 'e')
-                try:
-                    blur_radius = int(self._cfg.get('appearance.e_rating_blur_radius', 12)) if self._cfg else 12
+                    blur_radius = int(self._cfg.get('appearance.nsfw_blur_radius', self._cfg.get('appearance.e_rating_blur_radius', 12))) if self._cfg else 12
                 except Exception:
                     blur_radius = 12
                 w = ImageThumbnail(

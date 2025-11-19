@@ -1542,6 +1542,21 @@ class MainWindow(QMainWindow):
             loader = getattr(self.image_grid, 'image_loader', None)
             if loader and hasattr(loader, 'cache_stats_updated'):
                 loader.cache_stats_updated.connect(lambda s: self._perf_panel.update_stats(s, self._last_first_ms))
+            # 初始化时立即填充统计数据，避免首次打开为空白
+            try:
+                stats = {}
+                if loader and hasattr(loader, 'get_cache_stats'):
+                    stats = dict(loader.get_cache_stats() or {})
+                elif loader and hasattr(loader, 'image_loader') and hasattr(loader.image_loader, 'get_load_stats'):
+                    stats = dict(loader.image_loader.get_load_stats() or {})
+                elif loader and hasattr(loader, 'get_load_stats'):
+                    stats = dict(loader.get_load_stats() or {})
+                try:
+                    self._perf_panel.update_stats(stats, self._last_first_ms)
+                except Exception:
+                    pass
+            except Exception:
+                pass
         self._perf_panel.show()
         self._perf_panel.raise_()
         self._perf_panel.activateWindow()
