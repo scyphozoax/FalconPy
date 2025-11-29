@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QComboBox, QLineEdit, QPushButton, QScrollArea,
                             QGridLayout, QLabel, QFrame, QMenuBar, QMenu, QMessageBox, QDialog, QApplication, QProgressDialog, QFileDialog)
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QTimer
-from PyQt6.QtGui import QAction, QIcon, QFont, QPalette, QColor, QFontDatabase
+from PyQt6.QtGui import QAction, QIcon, QPalette, QColor
 import os
 import json
 from pathlib import Path
@@ -204,6 +204,25 @@ class MainWindow(QMainWindow):
         dialog.logout_requested.connect(self.logout_from_site)
         dialog.exec()
     
+    def open_config_file(self):
+        try:
+            path = Path(self.config.config_file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                self.config.save_config()
+            if os.name == 'nt':
+                os.startfile(str(path))
+            else:
+                from PyQt6.QtGui import QDesktopServices
+                from PyQt6.QtCore import QUrl
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+            self.status_bar.showMessage(self.i18n.t("已打开配置文件: {file}").format(file=str(path)), 3000)
+        except Exception as e:
+            try:
+                self.status_bar.showMessage(self.i18n.t("打开配置文件失败: {msg}").format(msg=str(e)), 3000)
+            except Exception:
+                pass
+
     def show_settings_dialog(self):
         dialog = SettingsDialog(self.config, self)
         current_theme = self.theme_manager.get_current_theme()
@@ -215,24 +234,79 @@ class MainWindow(QMainWindow):
         if dialog.exec() == SettingsDialog.DialogCode.Accepted:
             self.apply_settings()
     
-    def open_config_file(self):
-        from PyQt6.QtGui import QDesktopServices
-        from PyQt6.QtCore import QUrl
+    def on_login_success(self, site: str, user_info: dict):
+        session_id = self.session_manager.create_session(
+            site=site,
+            user_info=user_info,
+            remember=True
+        )
         try:
-            path = Path(self.config.config_file)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if not path.exists():
-                self.config.save_config()
-            if os.name == 'nt':
-                os.startfile(str(path))
-            else:
-                QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
-            self.status_bar.showMessage(self.i18n.t("已打开配置文件: {file}").format(file=str(path)), 3000)
-        except Exception as e:
-            try:
-                self.status_bar.showMessage(self.i18n.t("打开配置文件失败: {msg}").format(msg=str(e)), 3000)
-            except Exception:
-                pass
+            site_key = (site or '').lower()
+            creds = {'username': user_info.get('username', '')}
+            if site_key == 'danbooru':
+                api_key = user_info.get('api_key', '')
+                if api_key:
+                    creds['api_key'] = api_key
+            elif site_key in ('konachan', 'yande.re'):
+                password = user_info.get('password', '')
+                api_key = user_info.get('api_key', '')
+                if password:
+                    creds['password'] = password
+                if api_key:
+                    creds['api_key'] = api_key
+            if any(k in creds and creds[k] for k in ('api_key', 'password')) or creds.get('username'):
+                self.api_manager.update_credentials(site, creds)
+        except Exception:
+            pass
+        self.update_ui_for_login_state(site, user_info)
+        try:
+            self.site_selector.set_current_site(site)
+        except Exception:
+            pass
+        self.search_input.setText("")
+        self.perform_search()
+    
+    def update_ui_for_login_state(self, site: str, user_info: dict):
+        username = user_info.get('username', '')
+        self.status_bar.showMessage(self.i18n.t("已登录到 {site} - 欢迎 {username}").format(site=site, username=username))
+    
+    def logout_from_site(self, site: str):
+        user_info = self.session_manager.get_user_info(site)
+        if user_info:
+            user_id = user_info.get('user_id', user_info.get('username', ''))
+            self.session_manager.delete_session(site, user_id)
+        self.status_bar.showMessage(self.i18n.t("已从 {site} 登出").format(site=site))
+    
+    def check_existing_sessions(self):
+        active_sessions = self.session_manager.get_all_active_sessions()
+        if active_sessions:
+            session = list(active_sessions.values())[0]
+            site = session['site']
+            user_info = session['user_info']
+            self.update_ui_for_login_state(site, user_info)
+    
+    def apply_settings(self):
+        theme = self.config.get('appearance.theme', 'win11')
+        self.apply_theme(theme)
+        try:
+            lang = self.config.get('appearance.language', 'zh_CN')
+            self.i18n.set_language(lang)
+            self.menuBar().clear()
+            self.create_menu_bar()
+        except Exception:
+            pass
+        self.update()
+        try:
+            self.status_bar.showMessage(self.i18n.t("设置已应用"))
+        except Exception:
+            self.status_bar.showMessage("设置已应用")
+    
+    def apply_theme(self, theme: str):
+        self.theme_manager.apply_theme(theme, self)
+    
+    
+    
+    
 
     def export_favorites(self):
         try:
@@ -279,52 +353,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, self.i18n.t('错误'), self.i18n.t('导入失败: {msg}').format(msg=str(e)))
 
-    def apply_settings(self):
-        theme = self.config.get('appearance.theme', 'win11')
-        self.apply_theme(theme)
-        font_str = self.config.get('appearance.font', '')
-        scale = int(self.config.get('appearance.scale', 100) or 100)
-        scale_base = int(self.config.get('appearance.scale_base', 70) or 70)
-        eff_scale = max(60, min(150, int(round(scale_base * scale / 100.0))))
-        if font_str:
-            try:
-                base_family, base_size_str = font_str.split(',')[0], font_str.split(',')[1]
-                base_size = max(8, int(base_size_str))
-                scaled_size = max(8, int(round(base_size * (eff_scale / 100.0))))
-                app_font = QFont(base_family, scaled_size)
-                try:
-                    app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-                except Exception:
-                    pass
-                try:
-                    QApplication.instance().setFont(app_font)
-                except Exception:
-                    self.setFont(app_font)
-            except Exception:
-                pass
-        try:
-            lang = self.config.get('appearance.language', 'zh_CN')
-            self.i18n.set_language(lang)
-            self.menuBar().clear()
-            self.create_menu_bar()
-        except Exception:
-            pass
-        self.update()
-        try:
-            self.status_bar.showMessage(self.i18n.t("设置已应用"))
-        except Exception:
-            self.status_bar.showMessage("设置已应用")
-
-    def apply_theme(self, theme: str):
-        self.theme_manager.apply_theme(theme, self)
-
-    def check_existing_sessions(self):
-        active_sessions = self.session_manager.get_all_active_sessions()
-        if active_sessions:
-            session = list(active_sessions.values())[0]
-            site = session['site']
-            user_info = session['user_info']
-            self.update_ui_for_login_state(site, user_info)
+    
 
     def _on_fav_source_changed(self, idx: int):
         try:
@@ -356,127 +385,15 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-    def show_image_viewer_from_grid(self, grid_widget: ImageGridWidget, image_data: dict):
-        from .widgets.image_viewer import ImageViewerDialog
-        images = []
-        try:
-            images = list(getattr(grid_widget, 'current_images', []) or [])
-        except Exception:
-            images = []
-        cur_idx = 0
-        try:
-            cur_id = image_data.get('id')
-            cur_site = image_data.get('site')
-            cur_idx = next((i for i, it in enumerate(images)
-                            if it.get('id') == cur_id and it.get('site') == cur_site), 0)
-        except Exception:
-            cur_idx = 0
-        viewer = ImageViewerDialog(image_data, None, images_list=images, current_index=cur_idx)
-        viewer.favorite_toggled.connect(self.on_favorite_toggled)
-        viewer.download_requested.connect(self.download_image)
-        viewer.tag_clicked.connect(self.on_viewer_tag_clicked)
-        viewer.show()
-        if not hasattr(self, 'image_viewers'):
-            self.image_viewers = []
-        self.image_viewers.append(viewer)
-        try:
-            viewer.destroyed.connect(self._on_viewer_destroyed)
-        except Exception:
-            pass
+    
 
-    def add_to_favorites(self, image_data: dict):
-        try:
-            favorite_id = self._get_default_favorite_id()
-            img_id = str(image_data.get('id'))
-            site = (image_data.get('site') or 'unknown').lower()
-            success = self.db_manager.add_image_to_favorite(favorite_id, img_id, site, image_data)
-            if success:
-                self.status_bar.showMessage("已添加到收藏夹：默认收藏夹", 2000)
-            else:
-                self.status_bar.showMessage("该图片已在收藏夹中", 2000)
-            self._refresh_favorites_if_active()
-        except Exception as e:
-            QMessageBox.warning(self, "错误", f"添加到收藏夹失败：{str(e)}")
+    
 
-    def on_favorite_toggled(self, image_data: dict, is_favorite: bool):
-        site = (image_data.get('site') or 'unknown').lower()
-        if site == 'unknown':
-            site = 'danbooru'
-        if is_favorite:
-            sel = self._choose_favorite_destination(site)
-            if not sel:
-                return
-            if sel.get('destination') == 'local':
-                fav_id = sel.get('folder_id') or self._get_default_favorite_id()
-                try:
-                    img_id = str(image_data.get('id'))
-                    self.db_manager.add_image_to_favorite(fav_id, img_id, site, image_data)
-                    self.status_bar.showMessage("已添加到本地收藏夹", 2000)
-                    self._refresh_favorites_if_active()
-                except Exception as e:
-                    QMessageBox.warning(self, "错误", f"添加到本地收藏夹失败：{str(e)}")
-            else:
-                post_id = str(image_data.get('id'))
-                self._start_online_fav_op(site, 'add', post_id)
-        else:
-            dest = self._get_site_dest_default(site)
-            if dest == 'local':
-                fav_id = self._get_site_default_fav_id(site) or self._get_default_favorite_id()
-                try:
-                    img_id = str(image_data.get('id'))
-                    self.db_manager.remove_image_from_favorite(fav_id, img_id, site)
-                    self.status_bar.showMessage("已从本地收藏夹移除", 2000)
-                    self._refresh_favorites_if_active()
-                except Exception as e:
-                    QMessageBox.warning(self, "错误", f"移除本地收藏失败：{str(e)}")
-            else:
-                post_id = str(image_data.get('id'))
-                self._start_online_fav_op(site, 'remove', post_id)
+    
 
-    def _get_default_favorite_id(self) -> int:
-        favorites = self.db_manager.get_favorites()
-        for fav in favorites:
-            if fav.get('name') == '默认收藏夹':
-                return fav.get('id')
-        try:
-            return self.db_manager.create_favorite('默认收藏夹', '合并收藏，按站点分组')
-        except Exception:
-            return favorites[0]['id'] if favorites else self.db_manager.create_favorite('默认收藏夹')
+    
 
-    def _load_favorites_into_tabs(self):
-        try:
-            source = self.fav_source
-            local_grouped = {key: [] for _, key in self.site_tabs}
-            try:
-                for _, key in self.site_tabs:
-                    fav_id = self._get_site_default_fav_id(key) or self._get_default_favorite_id()
-                    if not fav_id:
-                        continue
-                    items = self.db_manager.get_favorite_images(fav_id)
-                    for it in items:
-                        site_key = (it.get('site') or 'unknown').lower()
-                        data = it.get('image_data') or {}
-                        if site_key == key:
-                            local_grouped[key].append(data)
-            except Exception:
-                pass
-            if source == 'local':
-                for _, key in self.site_tabs:
-                    grid = self.fav_grids.get(key)
-                    if grid:
-                        grid.set_images(local_grouped.get(key, []), 1, 1)
-                return
-            self._start_online_fav_fetch()
-            for _, key in self.site_tabs:
-                if key != 'danbooru':
-                    grid = self.fav_grids.get(key)
-                    if grid:
-                        grid.set_images(local_grouped.get(key, []), 1, 1)
-            grid = self.fav_grids.get('danbooru')
-            if grid:
-                grid.set_images(local_grouped.get('danbooru', []), 1, 1)
-        except Exception as e:
-            print(f"加载收藏夹失败: {e}")
+    
 
     def _start_online_fav_fetch(self):
         try:
@@ -858,6 +775,41 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
+    def on_favorite_toggled(self, image_data: dict, is_favorite: bool):
+        site = (image_data.get('site') or 'unknown').lower()
+        if site == 'unknown':
+            site = 'danbooru'
+        if is_favorite:
+            sel = self._choose_favorite_destination(site)
+            if not sel:
+                return
+            if sel.get('destination') == 'local':
+                fav_id = sel.get('folder_id') or self._get_default_favorite_id()
+                try:
+                    img_id = str(image_data.get('id'))
+                    self.db_manager.add_image_to_favorite(fav_id, img_id, site, image_data)
+                    self.status_bar.showMessage("已添加到本地收藏夹", 2000)
+                    self._refresh_favorites_if_active()
+                except Exception as e:
+                    QMessageBox.warning(self, "错误", f"添加到本地收藏夹失败：{str(e)}")
+            else:
+                post_id = str(image_data.get('id'))
+                self._start_online_fav_op(site, 'add', post_id)
+        else:
+            dest = self._get_site_dest_default(site)
+            if dest == 'local':
+                fav_id = self._get_site_default_fav_id(site) or self._get_default_favorite_id()
+                try:
+                    img_id = str(image_data.get('id'))
+                    self.db_manager.remove_image_from_favorite(fav_id, img_id, site)
+                    self.status_bar.showMessage("已从本地收藏夹移除", 2000)
+                    self._refresh_favorites_if_active()
+                except Exception as e:
+                    QMessageBox.warning(self, "错误", f"移除本地收藏失败：{str(e)}")
+            else:
+                post_id = str(image_data.get('id'))
+                self._start_online_fav_op(site, 'remove', post_id)
+
 
     
 
@@ -953,6 +905,40 @@ class MainWindow(QMainWindow):
         
         # 移除侧栏后不再连接收藏夹面板信号
         
+    def add_to_favorites(self, image_data: dict):
+        try:
+            favorite_id = self._get_default_favorite_id()
+            img_id = str(image_data.get('id'))
+            site = (image_data.get('site') or 'unknown').lower()
+            success = self.db_manager.add_image_to_favorite(favorite_id, img_id, site, image_data)
+            if success:
+                self.status_bar.showMessage("已添加到收藏夹：默认收藏夹", 2000)
+            else:
+                self.status_bar.showMessage("该图片已在收藏夹中", 2000)
+            self._refresh_favorites_if_active()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"添加到收藏夹失败：{str(e)}")
+
+    def remove_from_favorites(self, image_data: dict):
+        try:
+            img_id = str(image_data.get('id'))
+            site = (image_data.get('site') or 'unknown').lower()
+            try:
+                cnt = self.db_manager.remove_image_global(img_id, site)
+                if cnt > 0:
+                    self.status_bar.showMessage("已从收藏夹移除", 2000)
+                else:
+                    fav_id = self._get_site_default_fav_id(site) or self._get_default_favorite_id()
+                    self.db_manager.remove_image_from_favorite(fav_id, img_id, site)
+                    self.status_bar.showMessage("已从收藏夹移除", 2000)
+            except Exception:
+                fav_id = self._get_site_default_fav_id(site) or self._get_default_favorite_id()
+                self.db_manager.remove_image_from_favorite(fav_id, img_id, site)
+                self.status_bar.showMessage("已从收藏夹移除", 2000)
+            self._refresh_favorites_if_active()
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"移除收藏失败：{str(e)}")
+
     def refresh_content(self):
         self.perform_search()
 
@@ -1808,11 +1794,7 @@ class PerformancePanel(QDialog):
         except Exception:
             pass
     
-    def closeEvent(self, event):
-        event.accept()
     
-    
-
     def show_image_viewer_from_grid(self, grid_widget: ImageGridWidget, image_data: dict):
         """从指定图片网格打开图片查看器（用于收藏页子网格）。"""
         from .widgets.image_viewer import ImageViewerDialog
@@ -2407,27 +2389,6 @@ class PerformancePanel(QDialog):
         """应用设置更改"""
         theme = self.config.get('appearance.theme', 'win11')
         self.apply_theme(theme)
-
-        font_str = self.config.get('appearance.font', '')
-        scale = int(self.config.get('appearance.scale', 100) or 100)
-        scale_base = int(self.config.get('appearance.scale_base', 70) or 70)
-        eff_scale = max(60, min(150, int(round(scale_base * scale / 100.0))))
-        if font_str:
-            try:
-                base_family, base_size_str = font_str.split(',')[0], font_str.split(',')[1]
-                base_size = max(8, int(base_size_str))
-                scaled_size = max(8, int(round(base_size * (eff_scale / 100.0))))
-                app_font = QFont(base_family, scaled_size)
-                try:
-                    app_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-                except Exception:
-                    pass
-                try:
-                    QApplication.instance().setFont(app_font)
-                except Exception:
-                    self.setFont(app_font)
-            except Exception:
-                pass
 
         try:
             lang = self.config.get('appearance.language', 'zh_CN')

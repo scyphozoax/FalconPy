@@ -4,8 +4,8 @@
 import sys
 import os
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QFontDatabase, QFont
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
 
 # 添加项目根目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,7 +22,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("FalconPy")
-    app.setApplicationVersion("pre-251116.0")
+    app.setApplicationVersion("pre-251129.0")
     app.setOrganizationName("FalconPy")
     icon_path = r"d:\0\falconpy\assets\falcon.ico"
     if os.path.exists(icon_path):
@@ -30,47 +30,8 @@ def main():
 
     config = Config()
 
-    def apply_fonts_later():
-        try:
-            root_dir = os.path.dirname(os.path.abspath(__file__))
-            fonts_dir = os.path.join(root_dir, 'fonts')
-            if not os.path.isdir(fonts_dir):
-                pass
-            font_files = []
-            for name in os.listdir(fonts_dir):
-                if name.lower().endswith(('.ttf', '.otf')):
-                    font_files.append(os.path.join(fonts_dir, name))
-            for fp in font_files:
-                try:
-                    QFontDatabase.addApplicationFont(fp)
-                except Exception:
-                    pass
-            try:
-                font_str = config.get('appearance.font', '')
-                if font_str:
-                    scale = int(config.get('appearance.scale', 100) or 100)
-                    scale_base = int(config.get('appearance.scale_base', 70) or 70)
-                    eff_scale = max(60, min(150, int(round(scale_base * scale / 100.0))))
-                    parts = font_str.split(',')
-                    fam = parts[0] if parts else ''
-                    size = int(parts[1]) if len(parts) > 1 else 10
-                    if fam:
-                        scaled = max(8, int(round(size * (eff_scale / 100.0))))
-                        f = QFont(fam, scaled)
-                        try:
-                            f.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
-                        except Exception:
-                            pass
-                        app.setFont(f)
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"扫描并注册字体失败: {e}")
-
     main_window = MainWindow()
     main_window.show()
-
-    QTimer.singleShot(0, apply_fonts_later)
 
     t1 = perf_counter()
     print(f"[启动耗时] 初始化至窗口显示: {t1 - t0:.3f}s")

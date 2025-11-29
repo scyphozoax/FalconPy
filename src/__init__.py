@@ -3,5 +3,5 @@
 FalconPy 源代码包
 """
 
-__version__ = "1.0.0"
-__author__ = "FalconPy Team"
+__version__ = "0.3.5"
+__author__ = "Studio ScyphozoaX | Rabbit Hole"

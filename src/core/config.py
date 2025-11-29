@@ -43,7 +43,6 @@ class Config:
             },
             "appearance": {
                 "theme": "dark",
-                "font": "",
                 "scale": 100,
                 "scale_base": 70,
                 "show_thumbnails": True,

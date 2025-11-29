@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QSplitter, QFrame, QProgressBar, QTextBrowser,
                              QMenu, QApplication, QGraphicsView, QGraphicsScene,
                              QGraphicsPixmapItem, QGraphicsTextItem, QStackedLayout,
-                             QMainWindow, QFileDialog, QMessageBox)
+                             QMainWindow, QFileDialog, QMessageBox, QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QUrl, QThread, pyqtSlot, QPoint, QPointF
 from PyQt6.QtGui import QPixmap, QFont, QKeySequence, QShortcut, QCursor, QFontMetrics
 from PyQt6.QtGui import QTransform, QAction, QPainter, QColor
@@ -623,7 +623,7 @@ class ImageViewerDialog(QMainWindow):
     def setup_ui(self):
         """设置UI"""
         self.setWindowTitle(self.i18n.t("查看详情"))
-        self.setMinimumSize(1000, 700)
+        self.setMinimumSize(1500, 700)
         self.resize(1280, 820)
         
         # 创建菜单栏
@@ -640,37 +640,120 @@ class ImageViewerDialog(QMainWindow):
         # 分割器
         splitter = QSplitter(Qt.Orientation.Horizontal)
         
-        # 左侧：图片显示区域
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
+        # === 1. 左侧：标签侧栏 ===
+        tags_widget = QWidget()
+        tags_widget.setMinimumWidth(300)
+        tags_layout = QVBoxLayout(tags_widget)
+        tags_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 工具栏（重排为三行：导航/缩放/变换）
-        toolbar_top_layout = QHBoxLayout()
-        toolbar_mid_layout = QHBoxLayout()
-        toolbar_bottom_layout = QHBoxLayout()
+        # 标签标题
+        tags_title = QLabel(self.i18n.t("标签"))
+        tags_title.setFont(QFont("", 12, QFont.Weight.Bold))
+        tags_layout.addWidget(tags_title)
         
-        self.zoom_in_btn = QPushButton(self.i18n.t("放大 (+)"))
-        self.zoom_in_btn.clicked.connect(self.zoom_in)
+        # 标签文本区域
+        self.tags_text = QTextBrowser()
+        self.tags_text.setReadOnly(True)
+        self.tags_text.setOpenLinks(False)
+        self.tags_text.setOpenExternalLinks(False)
+        self.tags_text.anchorClicked.connect(self.on_tag_anchor_clicked)
+        self.tags_text.setStyleSheet(
+            """
+            QTextBrowser { 
+                background: transparent; 
+                border: none; 
+                font-size: 13px; 
+            }
+            QTextBrowser QScrollBar:vertical {
+                background: transparent;
+                width: 12px;
+                margin: 0;
+            }
+            QTextBrowser QScrollBar::handle:vertical {
+                background: #5a5a5a;
+                min-height: 20px;
+                border-radius: 6px;
+            }
+            QTextBrowser QScrollBar::handle:vertical:hover {
+                background: #787878;
+            }
+            QTextBrowser QScrollBar::add-line:vertical,
+            QTextBrowser QScrollBar::sub-line:vertical {
+                height: 0px;
+                background: none;
+            }
+            QTextBrowser QScrollBar::add-page:vertical,
+            QTextBrowser QScrollBar::sub-page:vertical {
+                background: none;
+            }
+            a { 
+                display: block;
+                width: 100%;
+                color: #e0e0e0; 
+                background-color: #3e3e3e; 
+                padding: 6px 10px; 
+                border-radius: 8px; 
+                text-decoration: none; 
+                margin: 4px 0; 
+            }
+            a:hover { 
+                background-color: #5a5a5a; 
+            }
+            """
+        )
+        self.tags_text.viewport().setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.update_tags_text()
+        tags_layout.addWidget(self.tags_text)
         
-        self.zoom_out_btn = QPushButton(self.i18n.t("缩小 (-)"))
-        self.zoom_out_btn.clicked.connect(self.zoom_out)
+        # 标签操作按钮 (复制/发送到SD) - 移到标签下方
+        tag_btns_layout = QHBoxLayout()
+        self.copy_tags_btn = QPushButton(self.i18n.t("复制标签"))
+        self.copy_tags_btn.clicked.connect(self.copy_tags_text)
+        self.send_to_sd_btn = QPushButton(self.i18n.t("发送到SD"))
+        self.send_to_sd_btn.clicked.connect(self.send_tags_to_sd)
+        tag_btns_layout.addWidget(self.copy_tags_btn)
+        tag_btns_layout.addWidget(self.send_to_sd_btn)
+        tags_layout.addLayout(tag_btns_layout)
         
-        self.reset_zoom_btn = QPushButton(self.i18n.t("重置 (0)"))
-        self.reset_zoom_btn.clicked.connect(self.reset_zoom)
+        # === 2. 中间：工具栏 + 图片 ===
+        center_widget = QWidget()
+        center_layout = QVBoxLayout(center_widget)
+        center_layout.setContentsMargins(0, 0, 0, 0)
         
-        self.fit_window_btn = QPushButton(self.i18n.t("适应窗口 (F)"))
-        self.fit_window_btn.clicked.connect(self.fit_to_window)
-        
-        self.fullscreen_btn = QPushButton(self.i18n.t("全屏 (F11)"))
-        self.fullscreen_btn.clicked.connect(self.toggle_fullscreen)
-
-        # 导航
+        # 工具栏 (紧凑模式)
+        # 第一行：导航 + 全屏
+        toolbar_top = QHBoxLayout()
         self.prev_btn = QPushButton(self.i18n.t("上一张"))
         self.prev_btn.clicked.connect(self.prev_image)
         self.next_btn = QPushButton(self.i18n.t("下一张"))
         self.next_btn.clicked.connect(self.next_image)
-
-        # 旋转/镜像
+        self.fullscreen_btn = QPushButton(self.i18n.t("全屏 (F11)"))
+        self.fullscreen_btn.clicked.connect(self.toggle_fullscreen)
+        
+        toolbar_top.addWidget(self.prev_btn)
+        toolbar_top.addWidget(self.next_btn)
+        toolbar_top.addStretch()
+        toolbar_top.addWidget(self.fullscreen_btn)
+        
+        # 第二行：缩放 + 旋转
+        toolbar_ctrl_left = QHBoxLayout()
+        self.zoom_in_btn = QPushButton(self.i18n.t("放大 (+)"))
+        self.zoom_in_btn.clicked.connect(self.zoom_in)
+        self.zoom_out_btn = QPushButton(self.i18n.t("缩小 (-)"))
+        self.zoom_out_btn.clicked.connect(self.zoom_out)
+        self.reset_zoom_btn = QPushButton(self.i18n.t("重置 (0)"))
+        self.reset_zoom_btn.clicked.connect(self.reset_zoom)
+        self.fit_window_btn = QPushButton(self.i18n.t("适应窗口 (F)"))
+        self.fit_window_btn.clicked.connect(self.fit_to_window)
+        self.zoom_label = QLabel("100%")
+        try:
+            self.zoom_label.setStyleSheet("padding: 0 6px;")
+            from PyQt6.QtGui import QFontMetrics as _FM
+            _fm = _FM(self.zoom_label.font())
+            self.zoom_label.setMinimumWidth(_fm.horizontalAdvance("100%") + 12)
+        except Exception:
+            pass
+            
         self.rotate_left_btn = QPushButton(self.i18n.t("左旋↺"))
         self.rotate_left_btn.clicked.connect(self.rotate_left)
         self.rotate_right_btn = QPushButton(self.i18n.t("右旋↻"))
@@ -679,70 +762,61 @@ class ImageViewerDialog(QMainWindow):
         self.flip_h_btn.clicked.connect(self.flip_horizontal)
         self.flip_v_btn = QPushButton(self.i18n.t("垂直镜像"))
         self.flip_v_btn.clicked.connect(self.flip_vertical)
-
-        # 缩放显示标签（保留百分比，不使用滑块）
-        self.zoom_label = QLabel("100%")
         
-        # 顶部：导航 + 全屏
-        toolbar_top_layout.setSpacing(8)
-        toolbar_top_layout.addWidget(self.prev_btn)
-        toolbar_top_layout.addWidget(self.next_btn)
-        toolbar_top_layout.addStretch()
-        toolbar_top_layout.addWidget(self.fullscreen_btn)
+        toolbar_ctrl_left.setSpacing(8)
+        toolbar_ctrl_left.addWidget(self.zoom_in_btn)
+        toolbar_ctrl_left.addWidget(self.zoom_out_btn)
+        toolbar_ctrl_left.addWidget(self.reset_zoom_btn)
+        toolbar_ctrl_left.addWidget(self.fit_window_btn)
 
-        # 中部：缩放 + 缩放百分比
-        toolbar_mid_layout.setSpacing(8)
-        toolbar_mid_layout.addWidget(self.zoom_in_btn)
-        toolbar_mid_layout.addWidget(self.zoom_out_btn)
-        toolbar_mid_layout.addWidget(self.reset_zoom_btn)
-        toolbar_mid_layout.addWidget(self.fit_window_btn)
-        toolbar_mid_layout.addSpacing(12)
-        try:
-            self.zoom_label.setStyleSheet("padding: 0 6px;")
-        except Exception:
-            pass
-        toolbar_mid_layout.addWidget(self.zoom_label)
-        toolbar_mid_layout.addStretch()
+        toolbar_ctrl_right = QHBoxLayout()
+        toolbar_ctrl_right.setSpacing(8)
+        toolbar_ctrl_right.addWidget(self.rotate_left_btn)
+        toolbar_ctrl_right.addWidget(self.rotate_right_btn)
+        toolbar_ctrl_right.addWidget(self.flip_h_btn)
+        toolbar_ctrl_right.addWidget(self.flip_v_btn)
 
-        # 底部：旋转与镜像
-        toolbar_bottom_layout.setSpacing(8)
-        toolbar_bottom_layout.addWidget(self.rotate_left_btn)
-        toolbar_bottom_layout.addWidget(self.rotate_right_btn)
-        toolbar_bottom_layout.addWidget(self.flip_h_btn)
-        toolbar_bottom_layout.addWidget(self.flip_v_btn)
-
-        # 将三行工具栏放入一个容器，以便整体隐藏/显示
+        toolbar_ctrl_row = QHBoxLayout()
+        toolbar_ctrl_row.setSpacing(12)
+        toolbar_ctrl_row.addLayout(toolbar_ctrl_left)
+        toolbar_ctrl_row.addSpacing(16)
+        toolbar_ctrl_row.addStretch()
+        toolbar_ctrl_row.addSpacing(16)
+        toolbar_ctrl_row.addWidget(self.zoom_label)
+        toolbar_ctrl_row.addSpacing(16)
+        toolbar_ctrl_row.addStretch()
+        toolbar_ctrl_row.addSpacing(16)
+        toolbar_ctrl_row.addLayout(toolbar_ctrl_right)
+        
         self.toolbar_container = QWidget()
         toolbar_container_layout = QVBoxLayout(self.toolbar_container)
-        toolbar_container_layout.setContentsMargins(0, 0, 0, 0)
-        toolbar_container_layout.setSpacing(6)
-        toolbar_container_layout.addLayout(toolbar_top_layout)
-        toolbar_container_layout.addLayout(toolbar_mid_layout)
-        toolbar_container_layout.addLayout(toolbar_bottom_layout)
-        left_layout.addWidget(self.toolbar_container)
-        # 根据文本自动调整按钮最小宽度，避免多语言下截断
+        toolbar_container_layout.setContentsMargins(8, 8, 8, 4)
+        toolbar_container_layout.setSpacing(10)
+        toolbar_container_layout.addLayout(toolbar_top)
+        toolbar_container_layout.addLayout(toolbar_ctrl_row)
+        
+        center_layout.addWidget(self.toolbar_container)
+        
+        # 调整按钮宽度
         self._adjust_buttons_width([
             self.prev_btn, self.next_btn, self.fullscreen_btn,
             self.zoom_in_btn, self.zoom_out_btn, self.reset_zoom_btn, self.fit_window_btn,
             self.rotate_left_btn, self.rotate_right_btn, self.flip_h_btn, self.flip_v_btn
         ])
-        
-        # 滚动区域
+
+        # 图片/视频区域
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        # 图片标签或视频播放器（堆叠容器，避免替换导致旧widget被删除）
         self.viewer_container = QWidget()
         self.viewer_stack = QStackedLayout(self.viewer_container)
         self.image_label = ZoomableImageLabel()
-        # 连接缩放变化信号以实时更新百分比显示
         try:
             self.image_label.zoom_changed.connect(lambda _sf: self.sync_zoom_ui())
         except Exception:
             pass
-        
-        # 创建视频播放容器，包含视频播放器和控制组件
+            
         self.video_container = QWidget()
         video_container_layout = QVBoxLayout(self.video_container)
         video_container_layout.setContentsMargins(0, 0, 0, 0)
@@ -758,14 +832,15 @@ class ImageViewerDialog(QMainWindow):
         self.viewer_stack.addWidget(self.video_container)
         self.viewer_stack.setCurrentWidget(self.image_label)
         
-        # 进度条（加粗显示）
+        self.scroll_area.setWidget(self.viewer_container)
+        center_layout.addWidget(self.scroll_area)
+        
+        # 进度条
         self.progress_bar = QProgressBar()
-        # 固定高度使进度条更粗
         try:
             self.progress_bar.setFixedHeight(18)
         except Exception:
             pass
-        # 基础样式，适配暗色主题；不改动配色体系时仍可生效
         try:
             self.progress_bar.setStyleSheet(
                 """
@@ -787,19 +862,15 @@ class ImageViewerDialog(QMainWindow):
         except Exception:
             pass
         self.progress_bar.hide()
+        center_layout.addWidget(self.progress_bar)
         
-        self.scroll_area.setWidget(self.viewer_container)
-        left_layout.addWidget(self.scroll_area)
-        left_layout.addWidget(self.progress_bar)
-        
-        # 右侧：信息面板
+        # === 3. 右侧：元数据 ===
         right_widget = QWidget()
-        right_widget.setFixedWidth(300)
+        right_widget.setMinimumWidth(300)
         right_layout = QVBoxLayout(right_widget)
         
         # 基本信息
         info_frame = QFrame()
-        # 为右侧信息区域添加边界框以明确分区
         try:
             info_frame.setFrameShape(QFrame.Shape.StyledPanel)
             info_frame.setFrameShadow(QFrame.Shadow.Plain)
@@ -808,26 +879,28 @@ class ImageViewerDialog(QMainWindow):
         info_frame.setStyleSheet(
             """
             QFrame {
-                border: 1px solid #5a5a5a;
-                border-radius: 6px;
-                padding: 8px;
+                border: none;
+                padding: 0px;
+                background: transparent;
             }
             """
         )
-        info_frame.setFrameStyle(QFrame.Shape.NoFrame)  # 移除边框
+        info_frame.setFrameStyle(QFrame.Shape.NoFrame)
         info_layout = QVBoxLayout(info_frame)
+        info_layout.setContentsMargins(0, 0, 0, 0)
         
         # 标题
         title_label = QLabel(self.i18n.t("元数据"))
         title_label.setFont(QFont("", 12, QFont.Weight.Bold))
+        title_label.setStyleSheet(
+            "background-color:#2a2a2a;border-radius:6px;padding:4px 8px;margin:8px 0 6px 0;"
+        )
         info_layout.addWidget(title_label)
         
         # 详细信息
         self.info_text = QTextBrowser()
-        self.info_text.setMaximumHeight(200)
         self.info_text.setReadOnly(True)
         self.info_text.setOpenExternalLinks(True)
-        # 统一滚动条样式为标签栏样式，并保持背景透明
         self.info_text.setStyleSheet(
             """
             QTextBrowser {
@@ -859,68 +932,14 @@ class ImageViewerDialog(QMainWindow):
             }
             """
         )
+        # 右侧信息区域与文本自适应填充
+        try:
+            info_frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+            self.info_text.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        except Exception:
+            pass
         self.update_info_text()
         info_layout.addWidget(self.info_text)
-        
-        # 标签信息（合并到同一框架，不再分两个Box）
-        tags_title = QLabel(self.i18n.t("标签"))
-        tags_title.setFont(QFont("", 12, QFont.Weight.Bold))
-        tags_title.setStyleSheet("margin-top: 10px;")
-        info_layout.addWidget(tags_title) # 添加到info_layout
-        
-        self.tags_text = QTextBrowser()
-        self.tags_text.setReadOnly(True)
-        self.tags_text.setOpenLinks(False) # 避免点击后内容被清空
-        self.tags_text.setOpenExternalLinks(False)
-        self.tags_text.anchorClicked.connect(self.on_tag_anchor_clicked)
-        
-        # 使用“芯片”样式替代文本链接，统一滚动条样式
-        self.tags_text.setStyleSheet(
-            """
-            QTextBrowser { 
-                background: transparent; 
-                border: none; 
-                font-size: 13px; 
-            }
-            QTextBrowser QScrollBar:vertical {
-                background: transparent;
-                width: 12px;
-                margin: 0;
-            }
-            QTextBrowser QScrollBar::handle:vertical {
-                background: #5a5a5a;
-                min-height: 20px;
-                border-radius: 6px;
-            }
-            QTextBrowser QScrollBar::handle:vertical:hover {
-                background: #787878;
-            }
-            QTextBrowser QScrollBar::add-line:vertical,
-            QTextBrowser QScrollBar::sub-line:vertical {
-                height: 0px;
-                background: none;
-            }
-            QTextBrowser QScrollBar::add-page:vertical,
-            QTextBrowser QScrollBar::sub-page:vertical {
-                background: none;
-            }
-            a { 
-                color: #e0e0e0; 
-                background-color: #3e3e3e; 
-                padding: 4px 8px; 
-                border-radius: 10px; 
-                text-decoration: none; 
-                margin-right: 6px; 
-            }
-            a:hover { 
-                background-color: #5a5a5a; 
-            }
-            """
-        )
-        self.tags_text.viewport().setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        self.update_tags_text()
-        info_layout.addWidget(self.tags_text) # 添加到info_layout
-        
         right_layout.addWidget(info_frame)
         
         # 操作按钮
@@ -937,19 +956,13 @@ class ImageViewerDialog(QMainWindow):
         self.open_source_btn = QPushButton(self.i18n.t("打开原页面"))
         self.open_source_btn.clicked.connect(self.open_source_page)
 
-        # 复制链接按钮
         self.copy_post_btn = QPushButton(self.i18n.t("复制帖子链接"))
         self.copy_post_btn.clicked.connect(self.copy_post_link)
         self.copy_image_btn = QPushButton(self.i18n.t("复制图片链接"))
         self.copy_image_btn.clicked.connect(self.copy_image_link)
         self.copy_source_btn = QPushButton(self.i18n.t("复制来源链接"))
         self.copy_source_btn.clicked.connect(self.copy_source_link)
-        self.copy_tags_btn = QPushButton(self.i18n.t("复制标签"))
-        self.copy_tags_btn.clicked.connect(self.copy_tags_text)
-        self.send_to_sd_btn = QPushButton(self.i18n.t("发送到SD"))
-        self.send_to_sd_btn.clicked.connect(self.send_tags_to_sd)
 
-        # 原图/大图切换
         self.toggle_original_btn = QPushButton(self.i18n.t("切换为大图"))
         self.toggle_original_btn.clicked.connect(self.toggle_original)
         self.use_original = True
@@ -961,17 +974,26 @@ class ImageViewerDialog(QMainWindow):
         button_layout.addWidget(self.copy_post_btn)
         button_layout.addWidget(self.copy_image_btn)
         button_layout.addWidget(self.copy_source_btn)
-        button_layout.addWidget(self.copy_tags_btn)
-        button_layout.addWidget(self.send_to_sd_btn)
         button_layout.addWidget(self.toggle_original_btn)
-        button_layout.addStretch()
         
         right_layout.addLayout(button_layout)
+        try:
+            right_layout.setStretch(0, 1)  # info_frame 伸展
+            right_layout.setStretch(1, 0)  # 按钮布局贴底
+        except Exception:
+            pass
         
-        # 添加到分割器
-        splitter.addWidget(left_widget)
+        # === 4. 组装分割器 ===
+        splitter.addWidget(tags_widget)
+        splitter.addWidget(center_widget)
         splitter.addWidget(right_widget)
-        splitter.setSizes([800, 300])
+        splitter.setSizes([300, 800, 300])
+        try:
+            splitter.setStretchFactor(0, 0)
+            splitter.setStretchFactor(1, 1)
+            splitter.setStretchFactor(2, 0)
+        except Exception:
+            pass
         
         main_layout.addWidget(splitter)
         try:
@@ -1082,52 +1104,50 @@ class ImageViewerDialog(QMainWindow):
         QShortcut(QKeySequence("Down"), self, self.handle_volume_down)
     
     def update_info_text(self):
-        """更新信息文本"""
-        info_lines = []
-        info_lines.append(f"<b>{self.i18n.t('ID')}</b>: {self.image_data.get('id', 'N/A')}")
-        
+        """更新信息文本（与左侧标签样式统一：逐行块状展示）"""
+        rows = []
+        rows.append((self.i18n.t('ID'), self.image_data.get('id', 'N/A')))
         if 'width' in self.image_data and 'height' in self.image_data:
-            info_lines.append(f"<b>{self.i18n.t('尺寸')}</b>: {self.image_data['width']} × {self.image_data['height']}")
-        
+            rows.append((self.i18n.t('尺寸'), f"{self.image_data['width']} × {self.image_data['height']}"))
         if 'file_size' in self.image_data:
             size_mb = self.image_data['file_size'] / (1024 * 1024)
-            info_lines.append(f"<b>{self.i18n.t('文件大小')}</b>: {size_mb:.2f} MB")
-        
+            rows.append((self.i18n.t('文件大小'), f"{size_mb:.2f} MB"))
         if 'file_ext' in self.image_data:
-            info_lines.append(f"<b>{self.i18n.t('格式')}</b>: {self.image_data['file_ext'].upper()}")
-        
+            rows.append((self.i18n.t('格式'), self.image_data['file_ext'].upper()))
         if 'rating' in self.image_data:
-            info_lines.append(f"<b>{self.i18n.t('评级')}</b>: {self.image_data['rating']}")
-        
+            rows.append((self.i18n.t('评级'), self.image_data['rating']))
         if 'score' in self.image_data:
-            info_lines.append(f"<b>{self.i18n.t('评分')}</b>: {self.image_data['score']}")
-        
+            rows.append((self.i18n.t('评分'), str(self.image_data['score'])))
         if 'created_at' in self.image_data:
-            info_lines.append(f"<b>{self.i18n.t('创建时间')}</b>: {self.image_data['created_at']}")
-
+            rows.append((self.i18n.t('创建时间'), self.image_data['created_at']))
         if 'uploader' in self.image_data:
-            info_lines.append(f"<b>{self.i18n.t('上传者')}</b>: {self.image_data.get('uploader')}")
-        
+            rows.append((self.i18n.t('上传者'), str(self.image_data.get('uploader'))))
+        if 'source' in self.image_data:
+            rows.append((self.i18n.t('来源'), str(self.image_data.get('source'))))
         if 'site' in self.image_data:
-            info_lines.append(f"<b>{self.i18n.t('站点')}</b>: {self.image_data.get('site')}")
-        
-        # 优先显示帖子链接，其次来源链接
+            rows.append((self.i18n.t('站点'), str(self.image_data.get('site'))))
         post_url = self.image_data.get('post_url')
         source_url = self.image_data.get('source')
         if post_url:
-            info_lines.append(f"<b>{self.i18n.t('帖子链接')}</b>: <a href=\"{post_url}\">{post_url}</a>")
-        elif source_url:
-            info_lines.append(f"<b>{self.i18n.t('来源')}</b>: <a href=\"{source_url}\">{source_url}</a>")
-        
-        self.info_text.setHtml('<br/>'.join(info_lines))
+            rows.append((self.i18n.t('帖子链接'), f"<a href=\"{post_url}\">{post_url}</a>"))
+        if source_url:
+            rows.append((self.i18n.t('来源链接'), f"<a href=\"{source_url}\">{source_url}</a>"))
+
+        html_lines = []
+        for k, v in rows:
+            html_lines.append(
+                f"<div style=\"display:block;width:100%;background-color:#3e3e3e;border-radius:8px;padding:6px 10px;margin:4px 0;\"><b>{k}</b>: {v}</div>"
+            )
+        self.info_text.setHtml("\n".join(html_lines) if html_lines else self.i18n.t("无元数据信息"))
     
     def update_tags_text(self):
         """更新标签文本"""
-        # 优先使用分组标签详情
+        # 优先使用分组标签详情（每行一个标签，减小间距）
         tag_details = self.image_data.get('tag_details')
         if isinstance(tag_details, dict) and tag_details:
             order = ['artist', 'character', 'copyright', 'general', 'meta']
             html_lines = []
+            from urllib.parse import quote
             for key in order:
                 names = tag_details.get(key, [])
                 if names:
@@ -1138,34 +1158,36 @@ class ImageViewerDialog(QMainWindow):
                         'general': self.i18n.t('通用'),
                         'meta': self.i18n.t('元数据')
                     }.get(key, key.title())
-                    html_lines.append(f"<b>{title}</b>:")
-                    # 每个标签渲染为可点击的链接，使用百分号编码并放入路径，避免符号问题
-                    from urllib.parse import quote
-                    # 使用段落和行内块级元素以实现自动换行
-                    spans = ', '.join(f"""<a href="tag:///{quote(name, safe='')}">{name}</a>""" for name in names)
-                    html_lines.append(f'<p style="line-height: 2.2;">{spans}</p>')
-            html = '<br/>'.join(html_lines).strip()
+                    html_lines.append(
+                        f"<div style=\"background-color:#2a2a2a;border-radius:6px;padding:4px 8px;margin:8px 0 6px 0;\"><b>{title}</b></div>"
+                    )
+                    for name in names:
+                        html_lines.append(f"<div><a href=\"tag:///{quote(name, safe='')}\">{name}</a></div>")
+            html = '\n'.join(html_lines).strip()
             self.tags_text.setHtml(html if html else self.i18n.t("无标签信息"))
             return
         
-        # 回退到旧的标签列表
+        # 回退到旧的标签列表（每行一个标签）
         tags = self.image_data.get('tags', [])
         if tags:
+            html_lines = []
+            from urllib.parse import quote
             if isinstance(tags[0], dict):
                 tag_groups = {}
                 for tag in tags:
                     tag_type = tag.get('type', 'general')
                     tag_groups.setdefault(tag_type, []).append(tag.get('name', ''))
-                html_lines = []
                 for tag_type, names in tag_groups.items():
-                    html_lines.append(f"<b>{tag_type.title()}</b>:")
-                    spans = ', '.join(f"""<a href="tag:///{quote(n, safe='')}">{n}</a>""" for n in names if n)
-                    html_lines.append(f'<p style="line-height: 2.2;">{spans}</p>')
-                self.tags_text.setHtml('<br/>'.join(html_lines).strip())
+                    html_lines.append(
+                        f"<div style=\"background-color:#2a2a2a;border-radius:6px;padding:4px 8px;margin:8px 0 6px 0;\"><b>{tag_type.title()}</b></div>"
+                    )
+                    for n in names:
+                        if n:
+                            html_lines.append(f"<div><a href=\"tag:///{quote(n, safe='')}\">{n}</a></div>")
             else:
-                from urllib.parse import quote
-                spans = ', '.join(f"""<a href="tag:///{quote(n, safe='')}">{n}</a>""" for n in tags)
-                self.tags_text.setHtml(f'<p style="line-height: 2.2;">{spans}</p>')
+                for n in tags:
+                    html_lines.append(f"<div><a href=\"tag:///{quote(n, safe='')}\">{n}</a></div>")
+            self.tags_text.setHtml('\n'.join(html_lines).strip())
         else:
             self.tags_text.setHtml(self.i18n.t("无标签信息"))
     
