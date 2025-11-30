@@ -9,8 +9,8 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QSplitter, QFrame, QProgressBar, QTextBrowser,
                              QMenu, QApplication, QGraphicsView, QGraphicsScene,
                              QGraphicsPixmapItem, QGraphicsTextItem, QStackedLayout,
-                             QMainWindow, QFileDialog, QMessageBox, QSizePolicy)
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QUrl, QThread, pyqtSlot, QPoint, QPointF
+                             QMainWindow, QFileDialog, QMessageBox, QSizePolicy, QToolButton)
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QUrl, QThread, pyqtSlot, QPoint, QPointF, QEvent
 from PyQt6.QtGui import QPixmap, QFont, QKeySequence, QShortcut, QCursor, QFontMetrics
 from PyQt6.QtGui import QTransform, QAction, QPainter, QColor
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -635,14 +635,25 @@ class ImageViewerDialog(QMainWindow):
         
         # 主布局
         main_layout = QHBoxLayout(central_widget)
-        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setSpacing(8)
         
         # 分割器
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        try:
+            splitter.setObjectName("mainSplitter")
+            splitter.setStyleSheet("QSplitter::handle { background: #3a3a3a; width: 2px; }")
+        except Exception:
+            pass
         
         # === 1. 左侧：标签侧栏 ===
         tags_widget = QWidget()
         tags_widget.setMinimumWidth(300)
+        try:
+            tags_widget.setObjectName("tagsPanel")
+            tags_widget.setStyleSheet("")
+        except Exception:
+            pass
         tags_layout = QVBoxLayout(tags_widget)
         tags_layout.setContentsMargins(0, 0, 0, 0)
         
@@ -704,6 +715,14 @@ class ImageViewerDialog(QMainWindow):
         self.tags_text.viewport().setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.update_tags_text()
         tags_layout.addWidget(self.tags_text)
+        tags_sep = QFrame()
+        try:
+            tags_sep.setFrameShape(QFrame.Shape.NoFrame)
+            tags_sep.setFixedHeight(1)
+            tags_sep.setStyleSheet("background-color: #4a4a4a")
+        except Exception:
+            pass
+        tags_layout.addWidget(tags_sep)
         
         # 标签操作按钮 (复制/发送到SD) - 移到标签下方
         tag_btns_layout = QHBoxLayout()
@@ -789,6 +808,11 @@ class ImageViewerDialog(QMainWindow):
         toolbar_ctrl_row.addLayout(toolbar_ctrl_right)
         
         self.toolbar_container = QWidget()
+        try:
+            self.toolbar_container.setObjectName("toolbarPanel")
+            self.toolbar_container.setStyleSheet("")
+        except Exception:
+            pass
         toolbar_container_layout = QVBoxLayout(self.toolbar_container)
         toolbar_container_layout.setContentsMargins(8, 8, 8, 4)
         toolbar_container_layout.setSpacing(10)
@@ -796,6 +820,14 @@ class ImageViewerDialog(QMainWindow):
         toolbar_container_layout.addLayout(toolbar_ctrl_row)
         
         center_layout.addWidget(self.toolbar_container)
+        tool_sep = QFrame()
+        try:
+            tool_sep.setFrameShape(QFrame.Shape.NoFrame)
+            tool_sep.setFixedHeight(1)
+            tool_sep.setStyleSheet("background-color: #4a4a4a")
+        except Exception:
+            pass
+        center_layout.addWidget(tool_sep)
         
         # 调整按钮宽度
         self._adjust_buttons_width([
@@ -834,6 +866,14 @@ class ImageViewerDialog(QMainWindow):
         
         self.scroll_area.setWidget(self.viewer_container)
         center_layout.addWidget(self.scroll_area)
+        viewer_sep = QFrame()
+        try:
+            viewer_sep.setFrameShape(QFrame.Shape.NoFrame)
+            viewer_sep.setFixedHeight(1)
+            viewer_sep.setStyleSheet("background-color: #4a4a4a")
+        except Exception:
+            pass
+        center_layout.addWidget(viewer_sep)
         
         # 进度条
         self.progress_bar = QProgressBar()
@@ -879,9 +919,9 @@ class ImageViewerDialog(QMainWindow):
         info_frame.setStyleSheet(
             """
             QFrame {
+                background: transparent;
                 border: none;
                 padding: 0px;
-                background: transparent;
             }
             """
         )
@@ -941,9 +981,22 @@ class ImageViewerDialog(QMainWindow):
         self.update_info_text()
         info_layout.addWidget(self.info_text)
         right_layout.addWidget(info_frame)
+        info_btn_sep = QFrame()
+        try:
+            info_btn_sep.setFrameShape(QFrame.Shape.NoFrame)
+            info_btn_sep.setFixedHeight(1)
+            info_btn_sep.setStyleSheet("background-color: #4a4a4a")
+        except Exception:
+            pass
+        right_layout.addWidget(info_btn_sep)
         
         # 操作按钮
         button_layout = QVBoxLayout()
+        try:
+            button_layout.setContentsMargins(0, 8, 0, 0)
+            button_layout.setSpacing(8)
+        except Exception:
+            pass
         
         self.favorite_btn = QPushButton(self.i18n.t("♡ 添加收藏"))
         self.favorite_btn.clicked.connect(self.toggle_favorite)
@@ -956,25 +1009,13 @@ class ImageViewerDialog(QMainWindow):
         self.open_source_btn = QPushButton(self.i18n.t("打开原页面"))
         self.open_source_btn.clicked.connect(self.open_source_page)
 
-        self.copy_post_btn = QPushButton(self.i18n.t("复制帖子链接"))
-        self.copy_post_btn.clicked.connect(self.copy_post_link)
-        self.copy_image_btn = QPushButton(self.i18n.t("复制图片链接"))
-        self.copy_image_btn.clicked.connect(self.copy_image_link)
-        self.copy_source_btn = QPushButton(self.i18n.t("复制来源链接"))
-        self.copy_source_btn.clicked.connect(self.copy_source_link)
-
-        self.toggle_original_btn = QPushButton(self.i18n.t("切换为大图"))
-        self.toggle_original_btn.clicked.connect(self.toggle_original)
         self.use_original = True
         
         button_layout.addWidget(self.favorite_btn)
         button_layout.addWidget(self.download_btn)
         button_layout.addWidget(self.save_video_btn)
         button_layout.addWidget(self.open_source_btn)
-        button_layout.addWidget(self.copy_post_btn)
-        button_layout.addWidget(self.copy_image_btn)
-        button_layout.addWidget(self.copy_source_btn)
-        button_layout.addWidget(self.toggle_original_btn)
+        # 已移除复制链接/切换原图相关按钮
         
         right_layout.addLayout(button_layout)
         try:
@@ -983,21 +1024,144 @@ class ImageViewerDialog(QMainWindow):
         except Exception:
             pass
         
-        # === 4. 组装分割器 ===
-        splitter.addWidget(tags_widget)
-        splitter.addWidget(center_widget)
-        splitter.addWidget(right_widget)
-        splitter.setSizes([300, 800, 300])
+        # === 4. 组装布局 ===
+        self.tags_widget = tags_widget
+        self.right_widget = right_widget
+        self.center_widget = center_widget
+        self.main_layout = main_layout
+        main_layout.addWidget(tags_widget)
+        main_layout.addWidget(center_widget, 1)
+        main_layout.addWidget(right_widget)
         try:
-            splitter.setStretchFactor(0, 0)
-            splitter.setStretchFactor(1, 1)
-            splitter.setStretchFactor(2, 0)
+            main_layout.setStretchFactor(center_widget, 1)
         except Exception:
             pass
-        
-        main_layout.addWidget(splitter)
+
+        try:
+            self.left_toggle_btn = QToolButton(center_widget)
+            self.left_toggle_btn.setText("‹")
+            self.left_toggle_btn.hide()
+            self.left_toggle_btn.setStyleSheet("QToolButton { background-color:#3a3a3a; border-radius:6px; padding:4px; color:#e0e0e0; font-size:16px; } QToolButton:hover { background-color:#5a5a5a; }")
+            try:
+                self.left_toggle_btn.setFixedSize(28, 160)
+            except Exception:
+                pass
+            self.left_toggle_btn.clicked.connect(self.toggle_left_panel)
+            self.right_toggle_btn = QToolButton(center_widget)
+            self.right_toggle_btn.setText("›")
+            self.right_toggle_btn.hide()
+            self.right_toggle_btn.setStyleSheet("QToolButton { background-color:#3a3a3a; border-radius:6px; padding:4px; color:#e0e0e0; font-size:16px; } QToolButton:hover { background-color:#5a5a5a; }")
+            try:
+                self.right_toggle_btn.setFixedSize(28, 160)
+            except Exception:
+                pass
+            self.right_toggle_btn.clicked.connect(self.toggle_right_panel)
+            center_widget.setMouseTracking(True)
+            center_widget.installEventFilter(self)
+            self.toolbar_container.setMouseTracking(True)
+            self.toolbar_container.installEventFilter(self)
+            self.scroll_area.setMouseTracking(True)
+            self.scroll_area.viewport().setMouseTracking(True)
+            self.scroll_area.installEventFilter(self)
+            self.scroll_area.viewport().installEventFilter(self)
+            try:
+                self.viewer_container.setMouseTracking(True)
+                self.viewer_container.installEventFilter(self)
+            except Exception:
+                pass
+            self.edge_trigger_margin = 96
+            self._sync_edge_button_icons()
+        except Exception:
+            pass
         try:
             self._update_action_buttons()
+        except Exception:
+            pass
+
+    def _position_edge_buttons(self):
+        try:
+            cw = self.center_widget.width()
+            ch = self.center_widget.height()
+            h1 = self.left_toggle_btn.sizeHint().height()
+            y = max(8, ch // 2 - h1 // 2)
+            self.left_toggle_btn.move(0, y)
+            w2 = self.right_toggle_btn.sizeHint().width()
+            h2 = self.right_toggle_btn.sizeHint().height()
+            y2 = max(8, ch // 2 - h2 // 2)
+            self.right_toggle_btn.move(cw - w2, y2)
+            try:
+                self.left_toggle_btn.raise_()
+                self.right_toggle_btn.raise_()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def eventFilter(self, obj, event):
+        try:
+            tracked = {
+                getattr(self, 'center_widget', None),
+                getattr(self, 'toolbar_container', None),
+                getattr(self, 'scroll_area', None),
+                getattr(self, 'viewer_container', None),
+                getattr(self.scroll_area, 'viewport', lambda: None)() if hasattr(self, 'scroll_area') else None,
+            }
+        except Exception:
+            tracked = {getattr(self, 'center_widget', None)}
+        if obj in tracked and event.type() == QEvent.Type.MouseMove:
+            try:
+                p = obj.mapTo(self.center_widget, QPoint(int(event.position().x()), int(event.position().y())))
+                x = int(p.x())
+                w = self.center_widget.width()
+                m = getattr(self, 'edge_trigger_margin', 48)
+                hover_left = self.left_toggle_btn.underMouse()
+                hover_right = self.right_toggle_btn.underMouse()
+                self.left_toggle_btn.setVisible((x <= m) or hover_left)
+                self.right_toggle_btn.setVisible(((w - x) <= m) or hover_right)
+                self._position_edge_buttons()
+            except Exception:
+                pass
+        elif obj in tracked and event.type() == QEvent.Type.Leave:
+            try:
+                # 仅在不悬停按钮时隐藏
+                if not self.left_toggle_btn.underMouse():
+                    self.left_toggle_btn.hide()
+                if not self.right_toggle_btn.underMouse():
+                    self.right_toggle_btn.hide()
+            except Exception:
+                pass
+        return super().eventFilter(obj, event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._position_edge_buttons()
+
+    def toggle_left_panel(self):
+        try:
+            self.tags_widget.setVisible(not self.tags_widget.isVisible())
+            self._position_edge_buttons()
+            self._sync_edge_button_icons()
+        except Exception:
+            pass
+
+    def toggle_right_panel(self):
+        try:
+            self.right_widget.setVisible(not self.right_widget.isVisible())
+            self._position_edge_buttons()
+            self._sync_edge_button_icons()
+        except Exception:
+            pass
+
+    def _sync_edge_button_icons(self):
+        try:
+            if self.tags_widget.isVisible():
+                self.left_toggle_btn.setText("‹")
+            else:
+                self.left_toggle_btn.setText("›")
+            if self.right_widget.isVisible():
+                self.right_toggle_btn.setText("›")
+            else:
+                self.right_toggle_btn.setText("‹")
         except Exception:
             pass
     
@@ -1842,23 +2006,7 @@ class ImageViewerDialog(QMainWindow):
                 tag = url.toString().replace('tag://', '')
             self.tag_clicked.emit(tag)
 
-    def copy_post_link(self):
-        from PyQt6.QtWidgets import QApplication
-        post_url = self.image_data.get('post_url')
-        if post_url:
-            QApplication.clipboard().setText(post_url)
-        
-    def copy_image_link(self):
-        from PyQt6.QtWidgets import QApplication
-        url = self.image_data.get('file_url') or self.image_data.get('large_file_url')
-        if url:
-            QApplication.clipboard().setText(url)
-        
-    def copy_source_link(self):
-        from PyQt6.QtWidgets import QApplication
-        source = self.image_data.get('source')
-        if source:
-            QApplication.clipboard().setText(source)
+    # 已移除复制链接相关功能
 
     def copy_tags_text(self):
         from PyQt6.QtWidgets import QApplication
@@ -1928,15 +2076,7 @@ class ImageViewerDialog(QMainWindow):
         else:
             QMessageBox.warning(self, self.i18n.t("Stable Diffusion"), self.i18n.t(msg))
 
-    def toggle_original(self):
-        """切换原图/大图并重新加载"""
-        self.use_original = not self.use_original
-        self.toggle_original_btn.setText(self.i18n.t("切换为原图") if not self.use_original else self.i18n.t("切换为大图"))
-        self.load_static_image()
-        try:
-            self._update_action_buttons()
-        except Exception:
-            pass
+    # 已移除切换原图相关功能
     
     def mouseDoubleClickEvent(self, event):
         """双击事件：切换全屏"""
