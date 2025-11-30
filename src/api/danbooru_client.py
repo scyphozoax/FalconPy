@@ -159,6 +159,90 @@ class DanbooruClient(BaseAPIClient):
         auth_headers = self._get_auth_headers()
         if not auth_headers:
             return False
+
+    async def get_tags(self, limit: int = 1000) -> List[Dict[str, Any]]:
+        params = {
+            'search[order]': 'count',
+            'limit': min(max(1, limit), 1000),
+            **self._get_auth_params()
+        }
+        try:
+            resp = await self.get('/tags.json', params=params, headers=self._get_auth_headers())
+            if isinstance(resp, list):
+                out = []
+                for t in resp:
+                    name = t.get('name') or ''
+                    cnt = t.get('post_count') or 0
+                    cat = t.get('category') if 'category' in t else None
+                    out.append({'name': name, 'count': int(cnt or 0), 'type': cat})
+                return out
+        except Exception:
+            pass
+        return []
+
+    async def search_tags(self, query: str, limit: int = 100) -> List[Dict[str, Any]]:
+        q = (query or '').strip()
+        if not q:
+            return []
+        # 先试 /tag_autocomplete.json
+        try:
+            ac1 = await self.get('/tag_autocomplete.json', params={'query': q, 'limit': min(max(1, limit), 1000)}, headers=self._get_auth_headers())
+            if isinstance(ac1, list) and ac1:
+                out = []
+                for t in ac1:
+                    name = t.get('name') or t.get('value') or ''
+                    cnt = t.get('post_count') or t.get('category_count') or 0
+                    cat = None
+                    if name:
+                        out.append({'name': name, 'count': int(cnt or 0), 'type': cat})
+                if out:
+                    return out
+        except Exception:
+            pass
+        # 再试 /autocomplete.json （新版接口）
+        try:
+            ac2 = await self.get('/autocomplete.json', params={'search[query]': q, 'search[type]': 'tag', 'limit': min(max(1, limit), 1000)}, headers=self._get_auth_headers())
+            if isinstance(ac2, list) and ac2:
+                out = []
+                for t in ac2:
+                    name = t.get('value') or t.get('label') or ''
+                    cnt = t.get('post_count') or t.get('category_count') or 0
+                    cat = None
+                    if name:
+                        out.append({'name': name, 'count': int(cnt or 0), 'type': cat})
+                if out:
+                    return out
+        except Exception:
+            pass
+        # 回退到 tags.json 的模糊匹配（不按分类，统一合并）
+        out_all = []
+        try:
+            params = {
+                'search[name_or_alias_matches]': f'*{q}*',
+                'search[hide_empty]': 'true',
+                'search[order]': 'count',
+                'limit': min(max(1, limit), 1000),
+                **self._get_auth_params()
+            }
+            resp = await self.get('/tags.json', params=params, headers=self._get_auth_headers())
+            if isinstance(resp, list):
+                for t in resp:
+                    name = t.get('name') or ''
+                    cnt = t.get('post_count') or 0
+                    if name:
+                        out_all.append({'name': name, 'count': int(cnt or 0), 'type': None})
+            # 去重并返回
+            seen = set()
+            uniq = []
+            for t in out_all:
+                n = t['name']
+                if n not in seen:
+                    uniq.append(t)
+                    seen.add(n)
+            return uniq[:limit]
+        except Exception:
+            pass
+        return []
         try:
             # Danbooru使用 DELETE /favorites/{post_id}.json 端点
             resp = await self.delete(f'/favorites/{post_id}.json', headers=auth_headers)

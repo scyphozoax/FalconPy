@@ -224,3 +224,37 @@ class KonachanClient(BaseAPIClient):
             return -1
         except Exception:
             return -1
+
+    async def get_tags(self, limit: int = 1000) -> List[Dict[str, Any]]:
+        try:
+            resp = await self.get('/tag.json', params={'order': 'count', 'limit': min(max(1, limit), 1000)})
+            if isinstance(resp, list):
+                out = []
+                for t in resp:
+                    name = t.get('name') or ''
+                    cnt = t.get('count') or 0
+                    typ = t.get('type') if 'type' in t else None
+                    out.append({'name': name, 'count': int(cnt or 0), 'type': typ})
+                return out
+        except Exception:
+            pass
+        return []
+
+    async def search_tags(self, query: str, limit: int = 100) -> List[Dict[str, Any]]:
+        q = (query or '').strip()
+        if not q:
+            return []
+        try:
+            # Moebooru 前缀匹配：name=abc*，排序按名称
+            resp = await self.get('/tag.json', params={'name': f'{q}*', 'order': 'name', 'limit': min(max(1, limit), 1000)})
+            if isinstance(resp, list):
+                out = []
+                for t in resp:
+                    name = t.get('name') or ''
+                    cnt = t.get('count') or 0
+                    typ = t.get('type') if 'type' in t else None
+                    out.append({'name': name, 'count': int(cnt or 0), 'type': typ})
+                return out
+        except Exception:
+            pass
+        return []

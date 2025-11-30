@@ -6,6 +6,7 @@ API管理器
 import asyncio
 from typing import Dict, List, Any, Optional
 from ..core.config import Config
+from .base_client import BaseAPIClient
 from .danbooru_client import DanbooruClient
 from .konachan_client import KonachanClient
 from .yandere_client import YandereClient
@@ -65,10 +66,7 @@ class APIManager:
             return []
         
         try:
-            async with client:
-                # 某些站点可能需要认证；当前不再支持 Sankaku
-                
-                return await client.search(tags, page, limit)
+            return await client.search(tags, page, limit)
         except Exception as e:
             print(f"搜索失败 ({site_name}): {e}")
             return []
@@ -79,11 +77,9 @@ class APIManager:
         if not client:
             return -1
         try:
-            async with client:
-                # 某些站点可能需要认证；当前不再支持 Sankaku
-                if hasattr(client, 'count'):
-                    return await client.count(tags)
-                return -1
+            if hasattr(client, 'count'):
+                return await client.count(tags)
+            return -1
         except Exception as e:
             print(f"获取总数失败 ({site_name}): {e}")
             return -1
@@ -121,13 +117,30 @@ class APIManager:
             return {}
         
         try:
-            async with client:
-                # 某些站点可能需要认证；当前不再支持 Sankaku
-                
-                return await client.get_post(post_id)
+            return await client.get_post(post_id)
         except Exception as e:
             print(f"获取帖子失败 ({site_name}): {e}")
             return {}
+
+    async def get_tags(self, site_name: str, limit: int = 1000) -> List[Dict[str, Any]]:
+        client = self.get_client(site_name)
+        if not client or not hasattr(client, 'get_tags'):
+            return []
+        try:
+            return await client.get_tags(limit=limit)
+        except Exception as e:
+            print(f"获取标签失败 ({site_name}): {e}")
+            return []
+
+    async def search_tags(self, site_name: str, query: str, limit: int = 100) -> List[Dict[str, Any]]:
+        client = self.get_client(site_name)
+        if not client or not hasattr(client, 'search_tags'):
+            return []
+        try:
+            return await client.search_tags(query=query, limit=limit)
+        except Exception as e:
+            print(f"搜索标签失败 ({site_name}): {e}")
+            return []
     
     async def get_favorites(self, site_name: str, user_id: Optional[str] = None, page: int = 1, limit: int = 40) -> List[Dict[str, Any]]:
         """获取指定网站的收藏夹"""
@@ -136,8 +149,7 @@ class APIManager:
             return []
         
         try:
-            async with client:
-                return await client.get_favorites(user_id, page=page, limit=limit)
+            return await client.get_favorites(user_id, page=page, limit=limit)
         except Exception as e:
             print(f"获取收藏夹失败 ({site_name}): {e}")
             return []
@@ -148,8 +160,7 @@ class APIManager:
         if not client or not hasattr(client, 'add_favorite'):
             return False
         try:
-            async with client:
-                return await client.add_favorite(post_id)
+            return await client.add_favorite(post_id)
         except Exception as e:
             print(f"添加在线收藏失败 ({site_name}): {e}")
             return False
@@ -160,8 +171,7 @@ class APIManager:
         if not client or not hasattr(client, 'remove_favorite'):
             return False
         try:
-            async with client:
-                return await client.remove_favorite(post_id)
+            return await client.remove_favorite(post_id)
         except Exception as e:
             print(f"移除在线收藏失败 ({site_name}): {e}")
             return False
@@ -198,3 +208,32 @@ class APIManager:
         
         # 保存配置
         self.config.save_config()
+
+    def shutdown(self):
+        try:
+            for client in self.clients.values():
+                try:
+                    sess = getattr(client, 'session', None)
+                    if sess and not getattr(sess, 'closed', False):
+                        # 安全关闭可能存在的持久会话
+                        import asyncio
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            loop.run_until_complete(sess.close())
+                            loop.close()
+                        except Exception:
+                            # 回退：直接调度关闭
+                            try:
+                                asyncio.get_event_loop().run_until_complete(sess.close())
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # 关闭共享会话（连接池）
+        try:
+            BaseAPIClient.close_shared_sessions()
+        except Exception:
+            pass

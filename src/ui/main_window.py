@@ -25,7 +25,10 @@ from .dialogs.batch_download_dialog import BatchDownloadDialog
 from .threads.download_queue_thread import DownloadQueueThread, DownloadTask
 from .themes.theme_manager import ThemeManager
 from .threads.favorites_thread import FavoritesFetchThread
+from .threads.tags_fetch_thread import TagsFetchThread
+from .threads.tags_query_thread import TagsQueryThread
 from .threads.online_favorite_thread import OnlineFavoriteOpThread
+from .widgets.tag_suggest import TagSuggest
 from .dialogs.favorite_destination_dialog import FavoriteDestinationDialog
 from ..core.config import Config
 from ..core.database import DatabaseManager
@@ -68,6 +71,9 @@ class MainWindow(QMainWindow):
         self._last_site = ''
         self._last_page = 1
         self._bg_threads = []
+        self._tag_cache = {}
+        self._tag_retry = {}
+        self._tag_thread = None
         
         # 设置API管理器
         self.setup_api_manager()
@@ -122,6 +128,15 @@ class MainWindow(QMainWindow):
         # 设置快捷键
         self.setup_shortcuts()
         self._setup_update_checks()
+        try:
+            self._init_tag_suggest()
+        except Exception:
+            pass
+        try:
+            s0 = self.site_selector.get_current_site()
+            self._fetch_tags_for_site(s0)
+        except Exception:
+            pass
     
     def create_menu_bar(self):
         """创建菜单栏"""
@@ -882,6 +897,11 @@ class MainWindow(QMainWindow):
         self.account_button = QPushButton(self.i18n.t("账号管理"))
         self.account_button.clicked.connect(self.show_account_management_dialog)
         toolbar.addWidget(self.account_button)
+        try:
+            if hasattr(self, 'tag_suggest'):
+                self.tag_suggest.attach(self.search_input)
+        except Exception:
+            pass
         
         # 连接信号
         self.site_selector.site_changed.connect(self.on_site_changed)
@@ -940,10 +960,19 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "错误", f"移除收藏失败：{str(e)}")
 
     def refresh_content(self):
+        try:
+            s = self.site_selector.get_current_site()
+            self._fetch_tags_for_site(s)
+        except Exception:
+            pass
         self.perform_search()
 
     def on_site_changed(self, site: str):
         self.status_bar.showMessage(f"已切换到: {site}")
+        try:
+            self._fetch_tags_for_site(site)
+        except Exception:
+            pass
         self.perform_search()
 
     def on_viewer_tag_clicked(self, tag: str):
@@ -1215,6 +1244,109 @@ class MainWindow(QMainWindow):
                         pass
         except Exception:
             pass
+
+    def eventFilter(self, obj, event):
+        try:
+            from PyQt6.QtCore import QEvent
+            if obj is getattr(self, 'search_input', None) and event.type() == QEvent.Type.KeyPress:
+                ts = getattr(self, 'tag_suggest', None)
+                if ts and ts.handle_key(event):
+                    return True
+            if obj is getattr(self, 'search_input', None) and event.type() == QEvent.Type.FocusOut:
+                ts = getattr(self, 'tag_suggest', None)
+                if ts:
+                    try:
+                        ts.hide()
+                    except Exception:
+                        pass
+            # 点击窗体其他区域时，若建议框可见且点击不在建议框/搜索框上，则隐藏建议框
+            if event.type() == QEvent.Type.MouseButtonPress:
+                ts = getattr(self, 'tag_suggest', None)
+                if ts and getattr(ts, 'popup', None) and ts.popup.isVisible():
+                    try:
+                        w = self.sender() if hasattr(self, 'sender') else None
+                    except Exception:
+                        w = None
+                    # 直接根据点击点判断是否在弹框/输入框矩形区域
+                    try:
+                        pos = event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos()
+                    except Exception:
+                        pos = None
+                    if pos is not None:
+                        in_popup = ts.popup.frameGeometry().contains(pos)
+                        in_input = self.search_input.frameGeometry().contains(pos)
+                        if not in_popup and not in_input:
+                            try:
+                                ts.hide()
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+        return super().eventFilter(obj, event)
+
+    def _init_tag_suggest(self):
+        try:
+            self.tag_suggest = TagSuggest(self, i18n=self.i18n)
+            if hasattr(self, 'search_input') and self.search_input:
+                try:
+                    self.tag_suggest.attach(self.search_input)
+                    self.tag_suggest.set_remote_fetcher(self._fetch_tags_remote)
+                except Exception:
+                    pass
+        except Exception:
+            self.tag_suggest = None
+
+    def _ensure_tags_for_site(self, site: str):
+        s = (site or '').lower()
+        if s in ('yande.re', 'yande'):
+            s = 'yandere'
+        if s not in self._tag_cache or not self._tag_cache.get(s):
+            self._fetch_tags_for_site(s)
+        else:
+            try:
+                if self.tag_suggest:
+                    self.tag_suggest.set_tags(self._tag_cache.get(s, []))
+            except Exception:
+                pass
+
+    def _fetch_tags_for_site(self, site: str):
+        try:
+            s = (site or '').lower()
+            if s in ('yande.re', 'yande'):
+                s = 'yandere'
+            if getattr(self, '_tag_thread', None) and self._tag_thread.isRunning():
+                try:
+                    self._tag_thread.cancel()
+                except Exception:
+                    pass
+            t = TagsFetchThread(self.api_manager, s, limit=1000)
+            t.tags_ready.connect(lambda tags, ss=s: self._on_tags_ready(ss, tags))
+            t.error.connect(lambda msg, ss=s: self._on_tags_error(ss, msg))
+            self._tag_thread = t
+            t.start()
+        except Exception:
+            pass
+
+    def _on_tags_ready(self, site: str, tags: list):
+        try:
+            self._tag_cache[site] = list(tags or [])
+            self._tag_retry[site] = 0
+            if self.tag_suggest:
+                self.tag_suggest.set_tags(self._tag_cache.get(site, []))
+            self.status_bar.showMessage(self.i18n.t("标签已更新"), 2000)
+        except Exception:
+            pass
+
+    def _on_tags_error(self, site: str, msg: str):
+        try:
+            n = int(self._tag_retry.get(site, 0) or 0)
+            if n < 2:
+                self._tag_retry[site] = n + 1
+                QTimer.singleShot(600 * (n + 1), lambda ss=site: self._fetch_tags_for_site(ss))
+            else:
+                self.status_bar.showMessage(self.i18n.t("标签获取失败"), 3000)
+        except Exception:
+            pass
     
     
     
@@ -1258,6 +1390,10 @@ class MainWindow(QMainWindow):
         site = self.site_selector.get_current_site()
         if site == "yande.re":
             site = "yandere"
+        try:
+            self._ensure_tags_for_site(site)
+        except Exception:
+            pass
 
         display_query = query if query else self.i18n.t("默认内容")
         self.status_bar.showMessage(self.i18n.t("正在搜索: {query}").format(query=display_query))
@@ -2464,6 +2600,12 @@ class PerformancePanel(QDialog):
             self._bg_threads.clear()
         except Exception:
             pass
+        # 关闭 API 层的连接池与可能存在的会话
+        try:
+            if hasattr(self, 'api_manager') and self.api_manager:
+                self.api_manager.shutdown()
+        except Exception:
+            pass
         
         event.accept()
     def on_viewer_tag_clicked(self, tag: str):
@@ -2528,3 +2670,37 @@ class PerformancePanel(QDialog):
                 progress.close()
             except Exception:
                 pass
+    def _fetch_tags_remote(self, query: str, on_done):
+        try:
+            s = self.site_selector.get_current_site()
+            if s in ('yande.re', 'yande'):
+                s = 'yandere'
+            t = TagsQueryThread(self.api_manager, s, query, limit=120)
+            t.tags_ready.connect(lambda tags, ss=s: self._on_remote_tags(ss, tags, on_done))
+            t.error.connect(lambda msg: on_done([]))
+            t.start()
+            # 保持引用以便生命周期管理
+            if not hasattr(self, '_tag_query_threads'):
+                self._tag_query_threads = []
+            self._tag_query_threads.append(t)
+        except Exception:
+            try:
+                on_done([])
+            except Exception:
+                pass
+
+    def _on_remote_tags(self, site: str, tags: list, on_done):
+        try:
+            existed = {t.get('name') for t in self._tag_cache.get(site, [])}
+            merged = list(self._tag_cache.get(site, []))
+            for t in (tags or []):
+                n = t.get('name')
+                if n and n not in existed:
+                    merged.append({'name': n, 'count': int(t.get('count') or 0), 'type': t.get('type')})
+            self._tag_cache[site] = merged
+        except Exception:
+            pass
+        try:
+            on_done(tags or [])
+        except Exception:
+            pass

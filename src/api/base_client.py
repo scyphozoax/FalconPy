@@ -18,11 +18,10 @@ class BaseAPIClient(ABC):
         self.session = session
         self._own_session = session is None
         self._dbg_counter = 0
+        # 每事件循环共享会话（连接池由 aiohttp session/connector 管理）
         
     async def __aenter__(self):
-        # 如果没有会话或会话已关闭，则创建新会话
         if self.session is None or getattr(self.session, 'closed', False):
-            # 信任系统环境变量中的代理（如 HTTP_PROXY/HTTPS_PROXY）
             self.session = aiohttp.ClientSession(trust_env=True)
         return self
 
@@ -33,12 +32,12 @@ class BaseAPIClient(ABC):
             self.session = None
     
     async def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
-        """发送HTTP请求"""
-        # 会话不存在或已关闭时重新创建
-        if (self.session is None) or getattr(self.session, 'closed', False):
-            # 信任系统环境变量中的代理（如 HTTP_PROXY/HTTPS_PROXY）
-            self.session = aiohttp.ClientSession(trust_env=True)
-        
+        """发送HTTP请求（为并发安全使用局部会话）"""
+        # 使用现有会话；若不存在则创建局部会话并在完成后关闭
+        # 始终创建局部会话（作用域限定在本次请求），避免跨事件循环资源泄漏
+        # 并保证任何返回路径都会自动关闭
+        sess = None
+
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         # 读取网络设置
         cfg = Config()
@@ -81,54 +80,63 @@ class BaseAPIClient(ABC):
         retries = 0
         max_retries = int(cfg.get('network.max_retries', 0) or 0)
         last_exc = None
-        while True:
-            start_ts = time.perf_counter()
-            try:
-                async with self.session.request(method, url, timeout=timeout, proxy=proxy_url, **kwargs) as response:
-                    response.raise_for_status()
-                    elapsed = time.perf_counter() - start_ts
-                    content_type = response.headers.get('content-type', '')
-                    dbg_log = debug and ((elapsed * 1000.0) >= slow_ms or d_pre)
-                    if dbg_log:
+        result = None
+        succeeded = False
+        async with aiohttp.ClientSession(trust_env=True) as sess:
+            while True:
+                start_ts = time.perf_counter()
+                try:
+                    async with sess.request(method, url, timeout=timeout, proxy=proxy_url, **kwargs) as response:
+                        response.raise_for_status()
+                        elapsed = time.perf_counter() - start_ts
+                        content_type = response.headers.get('content-type', '')
+                        dbg_log = debug and ((elapsed * 1000.0) >= slow_ms or d_pre)
+                        if dbg_log:
+                            try:
+                                print(f"[DEBUG] 响应: {response.status} {response.reason}, 内容类型: {content_type}, 耗时: {elapsed:.3f}s")
+                            except Exception:
+                                pass
+                        if 'application/json' in content_type:
+                            data = await response.json()
+                            if dbg_log:
+                                try:
+                                    length = len(json.dumps(data))
+                                    print(f"[DEBUG] JSON长度: {length}")
+                                except Exception:
+                                    pass
+                            result = data
+                            succeeded = True
+                            break
+                        else:
+                            text = await response.text()
+                            if dbg_log:
+                                try:
+                                    print(f"[DEBUG] 文本长度: {len(text)}")
+                                except Exception:
+                                    pass
+                            try:
+                                result = json.loads(text)
+                            except json.JSONDecodeError:
+                                result = {'content': text}
+                            succeeded = True
+                            break
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    last_exc = e
+                    if retries >= max_retries:
+                        break
+                    retries += 1
+                    backoff = min(1.5 ** retries * 0.2, 3.0)
+                    if debug:
                         try:
-                            print(f"[DEBUG] 响应: {response.status} {response.reason}, 内容类型: {content_type}, 耗时: {elapsed:.3f}s")
+                            print(f"[DEBUG] 重试 {retries}/{max_retries}, 等待 {backoff:.2f}s: {type(e).__name__} - {e}")
                         except Exception:
                             pass
-                    if 'application/json' in content_type:
-                        data = await response.json()
-                        if dbg_log:
-                            try:
-                                length = len(json.dumps(data))
-                                print(f"[DEBUG] JSON长度: {length}")
-                            except Exception:
-                                pass
-                        return data
-                    else:
-                        text = await response.text()
-                        if dbg_log:
-                            try:
-                                print(f"[DEBUG] 文本长度: {len(text)}")
-                            except Exception:
-                                pass
-                        try:
-                            return json.loads(text)
-                        except json.JSONDecodeError:
-                            return {'content': text}
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                last_exc = e
-                if retries >= max_retries:
+                    await asyncio.sleep(backoff)
+                except Exception as e:
+                    last_exc = e
                     break
-                retries += 1
-                backoff = min(1.5 ** retries * 0.2, 3.0)
-                if debug:
-                    try:
-                        print(f"[DEBUG] 重试 {retries}/{max_retries}, 等待 {backoff:.2f}s: {type(e).__name__} - {e}")
-                    except Exception:
-                        pass
-                await asyncio.sleep(backoff)
-            except Exception as e:
-                last_exc = e
-                break
+        if succeeded:
+            return result
         if isinstance(last_exc, aiohttp.ClientError):
             if debug:
                 try:
@@ -137,6 +145,11 @@ class BaseAPIClient(ABC):
                     pass
             raise APIException(f"请求失败: {last_exc}")
         raise APIException(f"未知错误: {last_exc}")
+
+    @classmethod
+    def close_shared_sessions(cls):
+        # 无共享会话时无需处理，保留方法以兼容调用方
+        pass
     
     async def get(self, endpoint: str, params: Optional[Dict] = None, **kwargs) -> Dict[str, Any]:
         """GET请求"""
