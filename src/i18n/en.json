@@ -10,6 +10,12 @@
   "帮助(&H)": "Help(&H)",
   "关于 FalconPy": "About FalconPy",
 
+  "版本: {version}": "Version: {version}",
+  "作者: {author}": "Author: {author}",
+  "FalconPy 是一个跨站图片浏览与收藏工具。": "FalconPy is a cross-site image browsing and favorites tool.",
+  "专注可读性与简洁设计。": "Focused on readability and a clean design.",
+  "项目主页": "Project Home",
+
   "设置": "Settings",
   "应用程序设置": "Application Settings",
   "外观": "Appearance",

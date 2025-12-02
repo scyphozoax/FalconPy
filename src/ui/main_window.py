@@ -16,9 +16,9 @@ import requests
 
 from .widgets.image_grid import ImageGridWidget
 from .widgets.thumbnail import ImageThumbnail
-# 已移除左侧收藏夹面板
 from .widgets.site_selector import SiteSelectorWidget
 from .dialogs.account_management_dialog import AccountManagementDialog
+from .dialogs.about_dialog import AboutDialog
 from .dialogs.settings_dialog import SettingsDialog
 from .dialogs.download_progress_dialog import DownloadProgressDialog
 from .dialogs.batch_download_dialog import BatchDownloadDialog
@@ -203,6 +203,7 @@ class MainWindow(QMainWindow):
         
         # 关于
         about_action = QAction(self.i18n.t('关于 FalconPy'), self)
+        about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
         check_update_action = QAction(self.i18n.t('检查更新...'), self)
         check_update_action.triggered.connect(self.check_for_updates)
@@ -217,6 +218,15 @@ class MainWindow(QMainWindow):
             pass
         dialog.login_success.connect(self.on_login_success)
         dialog.logout_requested.connect(self.logout_from_site)
+        dialog.exec()
+
+    def show_about_dialog(self):
+        dialog = AboutDialog(self)
+        try:
+            current_theme = self.theme_manager.get_current_theme()
+            self.theme_manager.apply_theme(current_theme, dialog)
+        except Exception:
+            pass
         dialog.exec()
     
     def open_config_file(self):
@@ -315,6 +325,17 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage(self.i18n.t("设置已应用"))
         except Exception:
             self.status_bar.showMessage("设置已应用")
+        try:
+            if hasattr(self, 'image_grid') and self.image_grid:
+                self.image_grid.update_grid()
+            if hasattr(self, 'fav_grids') and isinstance(self.fav_grids, dict):
+                for _k, _g in self.fav_grids.items():
+                    try:
+                        _g.update_grid()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
     
     def apply_theme(self, theme: str):
         self.theme_manager.apply_theme(theme, self)

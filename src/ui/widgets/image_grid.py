@@ -419,7 +419,12 @@ class ImageGridWidget(QWidget):
             row = i // self.columns
             col = i % self.columns
             
-            blur_flag = True
+            mode = 'off'
+            try:
+                mode = str(self._cfg.get('appearance.nsfw_filter', self._cfg.get('appearance.e_rating_filter', 'off')) or 'off') if self._cfg else 'off'
+            except Exception:
+                mode = 'off'
+            blur_flag = (mode == 'blur')
             try:
                 blur_radius = int(self._cfg.get('appearance.nsfw_blur_radius', self._cfg.get('appearance.e_rating_blur_radius', 12))) if self._cfg else 12
             except Exception:
@@ -459,7 +464,12 @@ class ImageGridWidget(QWidget):
             image_data = self.images[i]
             row = i // self.columns
             col = i % self.columns
-            blur_flag = True
+            mode = 'off'
+            try:
+                mode = str(self._cfg.get('appearance.nsfw_filter', self._cfg.get('appearance.e_rating_filter', 'off')) or 'off') if self._cfg else 'off'
+            except Exception:
+                mode = 'off'
+            blur_flag = (mode == 'blur')
             try:
                 blur_radius = int(self._cfg.get('appearance.nsfw_blur_radius', self._cfg.get('appearance.e_rating_blur_radius', 12))) if self._cfg else 12
             except Exception:
@@ -510,7 +520,12 @@ class ImageGridWidget(QWidget):
                 except Exception:
                     radius = 25
                 try:
-                    w.update_blur_policy(True, radius)
+                    mode = 'off'
+                    try:
+                        mode = str(self._cfg.get('appearance.nsfw_filter', self._cfg.get('appearance.e_rating_filter', 'off')) or 'off') if self._cfg else 'off'
+                    except Exception:
+                        mode = 'off'
+                    w.update_blur_policy(bool(mode == 'blur'), radius)
                 except Exception:
                     pass
                 new_widgets.append(w)
@@ -518,7 +533,12 @@ class ImageGridWidget(QWidget):
             else:
                 row = len(new_widgets) // self.columns
                 col = len(new_widgets) % self.columns
-                blur_flag = True
+                mode = 'off'
+                try:
+                    mode = str(self._cfg.get('appearance.nsfw_filter', self._cfg.get('appearance.e_rating_filter', 'off')) or 'off') if self._cfg else 'off'
+                except Exception:
+                    mode = 'off'
+                blur_flag = (mode == 'blur')
                 try:
                     blur_radius = int(self._cfg.get('appearance.nsfw_blur_radius', self._cfg.get('appearance.e_rating_blur_radius', 12))) if self._cfg else 12
                 except Exception:
