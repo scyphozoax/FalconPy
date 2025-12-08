@@ -926,8 +926,6 @@ class MainWindow(QMainWindow):
         
         # 连接信号
         self.site_selector.site_changed.connect(self.on_site_changed)
-        self.search_button.clicked.connect(self.perform_search)
-        self.search_input.returnPressed.connect(self.perform_search)
         
         # 连接图片网格信号
         self.image_grid.image_selected.connect(self.show_image_viewer)
@@ -1311,7 +1309,6 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'search_input') and self.search_input:
                 try:
                     self.tag_suggest.attach(self.search_input)
-                    self.tag_suggest.set_remote_fetcher(self._fetch_tags_remote)
                 except Exception:
                     pass
         except Exception:
@@ -1358,8 +1355,6 @@ class MainWindow(QMainWindow):
         try:
             self._tag_cache[site] = list(tags or [])
             self._tag_retry[site] = 0
-            if self.tag_suggest:
-                self.tag_suggest.set_tags(self._tag_cache.get(site, []))
             self.status_bar.showMessage(self.i18n.t("标签已更新"), 2000)
         except Exception:
             pass
@@ -1529,7 +1524,8 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
                 return True
-            if site == 'danbooru' and path.startswith('/posts/'):
+            # Danbooru/Aibooru 帖子详情链接
+            if site in ('danbooru', 'aibooru') and path.startswith('/posts/'):
                 parts = [p for p in path.split('/') if p]
                 post_id = parts[1] if len(parts) >= 2 else ''
                 if post_id.isdigit():
@@ -1567,7 +1563,7 @@ class MainWindow(QMainWindow):
                                         self.error.emit(str(e))
                                     except Exception:
                                         pass
-                        t = _GetPostThread(self.api_manager, 'danbooru', post_id)
+                        t = _GetPostThread(self.api_manager, site, post_id)
                         t.ready.connect(self._on_get_post_ready)
                         t.error.connect(self._on_get_post_error)
                         try:
@@ -1583,6 +1579,22 @@ class MainWindow(QMainWindow):
                         return True
                     except Exception:
                         pass
+            # Aibooru 列表页：识别 page 参数并跳转搜索页码
+            if site == 'aibooru' and path.strip('/') == 'posts':
+                try:
+                    from urllib.parse import parse_qs
+                    qs = parse_qs(u.query or '')
+                    p = qs.get('page', ['1'])[0]
+                    page_num = int(''.join(c for c in str(p) if c.isdigit()) or '1')
+                    if page_num <= 0:
+                        page_num = 1
+                    try:
+                        self.load_page(page_num)
+                    except Exception:
+                        pass
+                    return True
+                except Exception:
+                    pass
             return False
         except Exception:
             return False
@@ -1760,6 +1772,8 @@ class MainWindow(QMainWindow):
                 if not referer:
                     if site == 'danbooru':
                         referer = 'https://danbooru.donmai.us'
+                    elif site == 'aibooru':
+                        referer = 'https://aibooru.online'
                     elif site == 'konachan':
                         referer = 'https://konachan.net'
                     elif site == 'yandere':

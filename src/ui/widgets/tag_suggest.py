@@ -5,6 +5,8 @@ from PyQt6.QtCore import QPropertyAnimation
 import re
 import heapq
 import time
+import json
+from pathlib import Path
 
 class TagSuggest:
     def __init__(self, parent, i18n=None):
@@ -69,13 +71,22 @@ class TagSuggest:
         self._loading_item.setFlags(self._loading_item.flags() & ~Qt.ItemFlag.ItemIsSelectable & ~Qt.ItemFlag.ItemIsEnabled)
         self.popup.addItem(self._loading_item)
         self._loading_item.setHidden(True)
+        try:
+            self.popup.hide()
+        except Exception:
+            pass
+        self._visible = False
+        try:
+            self._load_local_tags()
+        except Exception:
+            pass
 
     def set_tags(self, tags):
         self.tags = list(tags or [])
 
     def set_remote_fetcher(self, fetcher):
         # fetcher: callable(query: str, on_done: callable(list))
-        self._remote_fetcher = fetcher
+        self._remote_fetcher = None
 
     def _score(self, name, count, query):
         n = name.lower()
@@ -158,6 +169,12 @@ class TagSuggest:
         if len(q_san) < 1:
             self.hide()
             return
+        try:
+            if self._line and not self._line.hasFocus():
+                self.hide()
+                return
+        except Exception:
+            pass
         self._cur_query = q_san
         self._heap = []
         self._scan_index = 0
@@ -200,12 +217,6 @@ class TagSuggest:
                 self._chunk_timer.start(0)
                 return
         self._render_heap_results()
-        try:
-            # 若本地结果过少，触发远端补充
-            if self._remote_fetcher and len(self._heap) <= max(1, self.max_items // 4):
-                self._remote_fetcher(self._cur_query, self._apply_remote_results)
-        except Exception:
-            pass
 
     def _render_heap_results(self):
         self.popup.setUpdatesEnabled(False)
@@ -216,7 +227,7 @@ class TagSuggest:
             for used in range(min(len(items), len(self._pool_items))):
                 r = items[used]
                 it = self._pool_items[used]
-                it.setText(f"{r['name']}    {self._format_count(r['count'])}")
+                it.setText(f"{r['name']}")
                 it.setData(Qt.ItemDataRole.UserRole, {'name': r['name'], 'count': int(r['count']), 'pos': int(r['pos'])})
                 it.setHidden(False)
             for j in range(used + 1, len(self._pool_items)):
@@ -314,9 +325,17 @@ class TagSuggest:
 
     def hide(self):
         try:
+            if self._visible and self.popup.isVisible():
+                self._anim.stop()
+                self._anim.setDirection(QPropertyAnimation.Direction.Backward)
+                self._anim.start()
             self.popup.hide()
+            self._visible = False
         except Exception:
-            pass
+            try:
+                self.popup.hide()
+            except Exception:
+                pass
 
     def handle_key(self, event):
         if not self.popup.isVisible():
@@ -371,3 +390,20 @@ class TagSuggest:
 
     def _on_item_clicked(self, item):
         self._choose_current()
+
+    def _load_local_tags(self):
+        p_json = Path(__file__).with_name('danbooru_tags.json')
+        p_csv = Path(__file__).with_name('danbooru-tags.csv')
+        names = []
+        try:
+            if p_json.exists():
+                with p_json.open('r', encoding='utf-8') as f:
+                    obj = json.load(f)
+                    if isinstance(obj, list):
+                        names = [str(x).strip() for x in obj if str(x).strip()]
+            elif p_csv.exists():
+                with p_csv.open('r', encoding='utf-8') as f:
+                    names = [ln.strip() for ln in f.read().splitlines() if ln.strip()]
+        except Exception:
+            names = []
+        self.tags = [{'name': n, 'count': 0} for n in names]
