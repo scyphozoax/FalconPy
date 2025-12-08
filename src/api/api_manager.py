@@ -8,6 +8,7 @@ from typing import Dict, List, Any, Optional
 from ..core.config import Config
 from .base_client import BaseAPIClient
 from .danbooru_client import DanbooruClient
+from .aibooru_client import AibooruClient
 from .konachan_client import KonachanClient
 from .yandere_client import YandereClient
 
@@ -27,6 +28,14 @@ class APIManager:
             self.clients['danbooru'] = DanbooruClient(
                 username=danbooru_config.get('username', ''),
                 api_key=danbooru_config.get('api_key', '')
+            )
+
+        # Aibooru（与 Danbooru 相同接口）
+        aibooru_config = self.config.get('sites.aibooru', {})
+        if aibooru_config.get('enabled', True):
+            self.clients['aibooru'] = AibooruClient(
+                username=aibooru_config.get('username', ''),
+                api_key=aibooru_config.get('api_key', '')
             )
         
         # Konachan
@@ -189,6 +198,11 @@ class APIManager:
         # 重新初始化对应的客户端
         if site_name == 'danbooru':
             self.clients[site_name] = DanbooruClient(
+                username=credentials.get('username', ''),
+                api_key=credentials.get('api_key', '')
+            )
+        elif site_name == 'aibooru':
+            self.clients[site_name] = AibooruClient(
                 username=credentials.get('username', ''),
                 api_key=credentials.get('api_key', '')
             )

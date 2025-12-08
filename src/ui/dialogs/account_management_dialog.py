@@ -40,6 +40,10 @@ class AccountManagementDialog(QDialog):
                 'description': '高质量动漫图片社区',
                 'requires_api_key': True
             },
+            'Aibooru': {
+                'description': 'AI 生成图像社区（与 Danbooru 接口一致）',
+                'requires_api_key': True
+            },
             'Konachan': {
                 'description': '高分辨率壁纸网站',
                 'requires_api_key': False

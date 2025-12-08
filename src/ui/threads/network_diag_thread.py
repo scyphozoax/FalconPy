@@ -20,6 +20,8 @@ def _site_probe_target(site: str) -> Tuple[str, str]:
     s = (site or '').strip().lower()
     if s == 'danbooru':
         return ('danbooru.donmai.us', 'https://danbooru.donmai.us/posts.json?limit=1')
+    if s == 'aibooru':
+        return ('aibooru.online', 'https://aibooru.online/posts.json?limit=1')
     if s == 'konachan':
         return ('konachan.net', 'https://konachan.net/post.json?limit=1')
     if s in ('yandere', 'yande.re', 'yande'):  # 兼容不同拼写

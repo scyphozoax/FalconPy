@@ -28,6 +28,7 @@ class SiteSelectorWidget(QWidget):
         self.combo_box = QComboBox()
         self.combo_box.addItems([
             "Danbooru",
+            "Aibooru",
             "Konachan",
             "Yande.re"
         ])
@@ -47,6 +48,14 @@ class SiteSelectorWidget(QWidget):
     
     def set_current_site(self, site_name):
         """设置当前网站"""
+        # 先尝试精确匹配
         index = self.combo_box.findText(site_name, Qt.MatchFlag.MatchFixedString)
         if index >= 0:
             self.combo_box.setCurrentIndex(index)
+            return
+        # 回退到不区分大小写匹配
+        s = (site_name or '').strip().lower()
+        for i in range(self.combo_box.count()):
+            if (self.combo_box.itemText(i) or '').strip().lower() == s:
+                self.combo_box.setCurrentIndex(i)
+                return

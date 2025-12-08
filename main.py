@@ -22,7 +22,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("FalconPy")
-    app.setApplicationVersion("pre-251130.0")
+    app.setApplicationVersion("pre-20251208.0")
     app.setOrganizationName("FalconPy")
     icon_path = r"d:\0\falconpy\assets\falcon.ico"
     if os.path.exists(icon_path):

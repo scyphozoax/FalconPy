@@ -1340,6 +1340,12 @@ class MainWindow(QMainWindow):
                     self._tag_thread.cancel()
                 except Exception:
                     pass
+                try:
+                    if not self._tag_thread.wait(1000):
+                        self._tag_thread.terminate()
+                        self._tag_thread.wait()
+                except Exception:
+                    pass
             t = TagsFetchThread(self.api_manager, s, limit=1000)
             t.tags_ready.connect(lambda tags, ss=s: self._on_tags_ready(ss, tags))
             t.error.connect(lambda msg, ss=s: self._on_tags_error(ss, msg))
@@ -1460,6 +1466,8 @@ class MainWindow(QMainWindow):
             n = (netloc or '').lower()
             if 'danbooru.donmai.us' in n:
                 return 'danbooru'
+            if 'aibooru.online' in n:
+                return 'aibooru'
             if 'konachan.net' in n:
                 return 'konachan'
             if 'yande.re' in n:

@@ -42,8 +42,8 @@ class LoginThread(QThread):
             api_key = (self.credentials.get('api_key') or '').strip()
 
             ok = False
-            # Danbooru 使用用户名+API码
-            if site.lower() == 'danbooru':
+            # Danbooru / Aibooru 使用用户名+API码
+            if site.lower() in ('danbooru', 'aibooru'):
                 ok = bool(username and api_key)
             # Konachan / Yande.re 使用用户名 + （密码 或 API码）
             elif site.lower() in ('konachan', 'yande.re'):
@@ -64,7 +64,7 @@ class LoginThread(QThread):
                 self.login_success.emit(self.site, user_info)
             else:
                 # 统一提示文案（根据站点类型）
-                if site.lower() == 'danbooru':
+                if site.lower() in ('danbooru', 'aibooru'):
                     self.login_failed.emit(self.site, "请填写用户名与API码")
                 elif site.lower() in ('konachan', 'yande.re'):
                     self.login_failed.emit(self.site, "请填写用户名，并提供密码或API码")
@@ -287,6 +287,10 @@ class LoginDialog(QDialog):
         sites_config = {
             'Danbooru': {
                 'description': '高质量动漫图片社区',
+                'requires_api_key': True
+            },
+            'Aibooru': {
+                'description': 'AI 生成图像社区（与 Danbooru 接口一致）',
                 'requires_api_key': True
             },
             'Konachan': {
